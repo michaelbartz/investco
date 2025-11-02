@@ -1,0 +1,268 @@
+{% extends 'investco/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ portfolio.name }} Asset Allocation - InvestCo{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'investco:home' %}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_list' %}">Portfolios</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_detail' portfolio.id %}">{{ portfolio.name }}</a></li>
+                <li class="breadcrumb-item active">Asset Allocation</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="fas fa-pie-chart"></i> {{ portfolio.name }} - Asset Allocation</h1>
+        <p class="text-muted">Portfolio breakdown by investment type with performance metrics</p>
+    </div>
+</div>
+
+<!-- Portfolio Summary -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Value</h6>
+                <h3>${{ total_value|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Cost</h6>
+                <h3>${{ total_cost|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Gain/Loss</h6>
+                <h3 class="{% if total_gain_loss >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                    ${{ total_gain_loss|floatformat:2|intcomma }}
+                </h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Asset Allocation Chart -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Allocation by Value</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="allocationChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Performance by Asset Type</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="performanceChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Allocation Table -->
+<div class="row">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-table"></i> Detailed Allocation Breakdown</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Asset Type</th>
+                                <th class="text-end">Count</th>
+                                <th class="text-end">Total Value</th>
+                                <th class="text-end">% of Portfolio</th>
+                                <th class="text-end">Total Cost</th>
+                                <th class="text-end">Gain/Loss</th>
+                                <th class="text-end">Return %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for type, data in allocation.items %}
+                            <tr>
+                                <td>
+                                    <strong>{{ type }}</strong>
+                                    <button class="btn btn-sm btn-link" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ forloop.counter }}">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </button>
+                                </td>
+                                <td class="text-end">{{ data.count }}</td>
+                                <td class="text-end">${{ data.total_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <strong>{{ data.percentage|floatformat:1 }}%</strong>
+                                    <div class="progress" style="height: 5px;">
+                                        <div class="progress-bar" role="progressbar" style="width: {{ data.percentage }}%"></div>
+                                    </div>
+                                </td>
+                                <td class="text-end">${{ data.total_cost|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <span class="{% if data.gain_loss >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ data.gain_loss|floatformat:2|intcomma }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <span class="{% if data.gain_loss_percentage >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        {{ data.gain_loss_percentage|floatformat:2 }}%
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr class="collapse" id="collapse{{ forloop.counter }}">
+                                <td colspan="7" class="bg-light">
+                                    <div class="p-3">
+                                        <h6>Investments in {{ type }}</h6>
+                                        <ul class="list-unstyled mb-0">
+                                            {% for investment in data.investments %}
+                                            <li class="mb-2">
+                                                <i class="fas fa-circle" style="font-size: 6px; vertical-align: middle;"></i>
+                                                <strong>{{ investment.symbol|default:investment.name }}</strong>
+                                                - ${{ investment.current_value|floatformat:2|intcomma }}
+                                                <span class="{% if investment.gain_loss >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                                    ({{ investment.gain_loss_percentage|floatformat:2 }}%)
+                                                </span>
+                                                <a href="{% url 'investco:investment_performance' investment.id %}" class="btn btn-sm btn-outline-primary ms-2">
+                                                    <i class="fas fa-chart-line"></i> View
+                                                </a>
+                                            </li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Links -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="btn-group" role="group">
+            <a href="{% url 'investco:portfolio_performance' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-line"></i> Portfolio Performance
+            </a>
+            <a href="{% url 'investco:time_period_report' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-calendar"></i> Time Period Report
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Allocation Pie Chart
+    const allocationCtx = document.getElementById('allocationChart').getContext('2d');
+    const labels = {{ chart_labels|safe }};
+    const data = {{ chart_data|safe }};
+
+    new Chart(allocationCtx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: [
+                    'rgba(102, 126, 234, 0.8)',
+                    'rgba(118, 75, 162, 0.8)',
+                    'rgba(237, 100, 166, 0.8)',
+                    'rgba(255, 159, 64, 0.8)',
+                    'rgba(75, 192, 192, 0.8)',
+                    'rgba(54, 162, 235, 0.8)',
+                    'rgba(153, 102, 255, 0.8)',
+                    'rgba(255, 99, 132, 0.8)',
+                    'rgba(255, 205, 86, 0.8)',
+                    'rgba(201, 203, 207, 0.8)'
+                ],
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'right'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((value / total) * 100).toFixed(1);
+                            return label + ': $' + value.toLocaleString() + ' (' + percentage + '%)';
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Performance Bar Chart
+    const performanceCtx = document.getElementById('performanceChart').getContext('2d');
+    const returns = [
+        {% for type, data in allocation.items %}
+            {{ data.gain_loss_percentage|floatformat:2 }}{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    new Chart(performanceCtx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Return %',
+                data: returns,
+                backgroundColor: returns.map(r => r >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                borderColor: returns.map(r => r >= 0 ? '#28a745' : '#dc3545'),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

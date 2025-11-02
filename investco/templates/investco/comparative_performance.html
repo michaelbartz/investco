@@ -1,0 +1,255 @@
+{% extends 'investco/base.html' %}
+{% load humanize %}
+
+{% block title %}Comparative Performance - InvestCo{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'investco:home' %}">Home</a></li>
+                <li class="breadcrumb-item active">Comparative Performance</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="fas fa-balance-scale"></i> Comparative Performance Analysis</h1>
+        <p class="text-muted">Compare multiple investments or portfolios side-by-side</p>
+    </div>
+</div>
+
+<!-- Selection Form -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-filter"></i> Select Items to Compare</h5>
+            </div>
+            <div class="card-body">
+                <form method="get" action="{% url 'investco:comparative_performance' %}">
+                    <div class="row">
+                        <div class="col-md-5">
+                            <label class="form-label"><strong>Portfolios</strong></label>
+                            <select name="portfolios" class="form-select" multiple size="5">
+                                {% for portfolio in user_portfolios %}
+                                <option value="{{ portfolio.id }}"
+                                        {% if portfolio.id in selected_portfolio_ids %}selected{% endif %}>
+                                    {{ portfolio.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Hold Ctrl/Cmd to select multiple</small>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label"><strong>Investments</strong></label>
+                            <select name="investments" class="form-select" multiple size="5">
+                                {% for investment in all_investments %}
+                                <option value="{{ investment.id }}"
+                                        {% if investment.id in selected_investment_ids %}selected{% endif %}>
+                                    {{ investment.symbol|default:investment.name }} ({{ investment.portfolio.name }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Hold Ctrl/Cmd to select multiple</small>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label"><strong>Time Period</strong></label>
+                            <select name="days" class="form-select">
+                                <option value="7" {% if days == 7 %}selected{% endif %}>7 Days</option>
+                                <option value="30" {% if days == 30 %}selected{% endif %}>30 Days</option>
+                                <option value="90" {% if days == 90 %}selected{% endif %}>90 Days</option>
+                                <option value="365" {% if days == 365 %}selected{% endif %}>1 Year</option>
+                            </select>
+                            <button type="submit" class="btn btn-primary mt-3 w-100">
+                                <i class="fas fa-sync"></i> Compare
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Comparison Results -->
+{% if comparison_data %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-table"></i> Comparison Results</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th class="text-end">Current Value</th>
+                                <th class="text-end">Gain/Loss</th>
+                                <th class="text-end">Return %</th>
+                                <th class="text-end">Period Return</th>
+                                <th class="text-end">Volatility</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in comparison_data %}
+                            <tr>
+                                <td><strong>{{ item.name }}</strong></td>
+                                <td><span class="badge bg-secondary">{{ item.type }}</span></td>
+                                <td class="text-end">${{ item.current_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <span class="{% if item.gain_loss >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ item.gain_loss|floatformat:2|intcomma }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <span class="{% if item.gain_loss_percentage >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        {{ item.gain_loss_percentage|floatformat:2 }}%
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    {% if item.metrics %}
+                                        <span class="{% if item.metrics.period_return >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                            {{ item.metrics.period_return|floatformat:2 }}%
+                                        </span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    {% if item.metrics %}
+                                        {{ item.metrics.volatility|floatformat:2 }}%
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Visual Comparison Chart -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Current Value Comparison</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="valueChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Return Percentage Comparison</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="returnChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <h5><i class="fas fa-info-circle"></i> No Items Selected</h5>
+            <p class="mb-0">Please select at least one portfolio or investment to compare.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if comparison_data %}
+<script>
+    // Prepare data
+    const names = [{% for item in comparison_data %}'{{ item.name }}'{% if not forloop.last %},{% endif %}{% endfor %}];
+    const values = [{% for item in comparison_data %}{{ item.current_value|floatformat:2 }}{% if not forloop.last %},{% endif %}{% endfor %}];
+    const returns = [{% for item in comparison_data %}{{ item.gain_loss_percentage|floatformat:2 }}{% if not forloop.last %},{% endif %}{% endfor %}];
+
+    // Value Comparison Chart
+    const valueCtx = document.getElementById('valueChart').getContext('2d');
+    new Chart(valueCtx, {
+        type: 'bar',
+        data: {
+            labels: [{% for item in comparison_data %}'{{ item.name }}'{% if not forloop.last %},{% endif %}{% endfor %}],
+            datasets: [{
+                label: 'Current Value',
+                data: values,
+                backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                borderColor: '#667eea',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Return Comparison Chart
+    const returnCtx = document.getElementById('returnChart').getContext('2d');
+    new Chart(returnCtx, {
+        type: 'bar',
+        data: {
+            labels: [{% for item in comparison_data %}'{{ item.name }}'{% if not forloop.last %},{% endif %}{% endfor %}],
+            datasets: [{
+                label: 'Return %',
+                data: returns,
+                backgroundColor: returns.map(r => r >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'),
+                borderColor: returns.map(r => r >= 0 ? '#28a745' : '#dc3545'),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endif %}
+{% endblock %}

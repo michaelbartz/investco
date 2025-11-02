@@ -1,0 +1,515 @@
+{% extends 'investco/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ investment.symbol|default:investment.name }} Performance - InvestCo{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'investco:home' %}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_detail' investment.portfolio.id %}">{{ investment.portfolio.name }}</a></li>
+                <li class="breadcrumb-item active">{{ investment.symbol|default:investment.name }} Performance</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h1><i class="fas fa-chart-line"></i> {{ investment.symbol|default:investment.name }} Performance</h1>
+                <p class="text-muted">{{ investment.get_investment_type }} - {{ investment.name }}</p>
+            </div>
+            {% if is_annuity %}
+            <div>
+                <a href="{% url 'investco:investment_statements' investment.id %}" class="btn btn-outline-primary me-2">
+                    <i class="fas fa-file-invoice"></i> View Statements
+                </a>
+                <a href="/admin/investco/annuitystatement/add/?investment={{ investment.id }}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Statement
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Time Period Selector -->
+<div class="row mb-4">
+    <div class="col-12">
+        {% if is_annuity %}
+        <!-- Annuity: Quick select + Custom date range -->
+        <div class="d-flex gap-3 align-items-end flex-wrap">
+            <div>
+                <label class="form-label small text-muted mb-1">Quick Select</label>
+                <div class="btn-group" role="group">
+                    <a href="?days=90" class="btn btn-outline-primary {% if days == 90 and not using_custom_range %}active{% endif %}">90 Days</a>
+                    <a href="?days=180" class="btn btn-outline-primary {% if days == 180 and not using_custom_range %}active{% endif %}">6 Months</a>
+                    <a href="?days=365" class="btn btn-outline-primary {% if days == 365 and not using_custom_range %}active{% endif %}">1 Year</a>
+                    <a href="?days=730" class="btn btn-outline-primary {% if days == 730 and not using_custom_range %}active{% endif %}">2 Years</a>
+                    <a href="?days=1825" class="btn btn-outline-primary {% if days == 1825 and not using_custom_range %}active{% endif %}">5 Years</a>
+                    <a href="?days=all" class="btn btn-outline-primary {% if days == 'all' and not using_custom_range %}active{% endif %}">All Time</a>
+                </div>
+            </div>
+            <div class="ms-auto">
+                <form method="get" class="d-flex gap-2 align-items-end">
+                    <div>
+                        <label for="start_date" class="form-label small text-muted mb-1">Start Date</label>
+                        <input type="date" class="form-control" id="start_date" name="start_date"
+                               value="{{ start_date|date:'Y-m-d' }}" required>
+                    </div>
+                    <div>
+                        <label for="end_date" class="form-label small text-muted mb-1">End Date</label>
+                        <input type="date" class="form-control" id="end_date" name="end_date"
+                               value="{{ end_date|date:'Y-m-d' }}" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Apply
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <!-- Share-based: Quick select only -->
+        <div class="btn-group" role="group">
+            <a href="?days=7" class="btn btn-outline-primary {% if days == 7 %}active{% endif %}">7 Days</a>
+            <a href="?days=30" class="btn btn-outline-primary {% if days == 30 %}active{% endif %}">30 Days</a>
+            <a href="?days=90" class="btn btn-outline-primary {% if days == 90 %}active{% endif %}">90 Days</a>
+            <a href="?days=365" class="btn btn-outline-primary {% if days == 365 %}active{% endif %}">1 Year</a>
+            <a href="?days=all" class="btn btn-outline-primary {% if days == 'all' %}active{% endif %}">All Time</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Investment Metrics -->
+{% if is_annuity %}
+<!-- Annuity Metrics -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Current Value</h6>
+                <h3>${{ investment.current_value|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">Account Balance</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Premiums</h6>
+                <h3>${{ breakdown.total_premiums|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">Paid In</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Investment Gain/Loss</h6>
+                <h3 class="{% if breakdown.investment_gain_loss >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                    ${{ breakdown.investment_gain_loss|floatformat:2|intcomma }}
+                </h3>
+                <small>({{ investment.gain_loss_percentage|floatformat:2 }}%)</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Withdrawals</h6>
+                <h3>${{ breakdown.withdrawals|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">Taken Out</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<!-- Share-Based Investment Metrics -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Current Value</h6>
+                <h3>${{ investment.current_value|floatformat:2|intcomma }}</h3>
+                <small>${{ investment.current_price|floatformat:2|intcomma }} × {{ investment.shares|floatformat:2|intcomma }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Gain/Loss</h6>
+                <h3 class="{% if investment.gain_loss >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                    ${{ investment.gain_loss|floatformat:2|intcomma }}
+                </h3>
+                <small>({{ investment.gain_loss_percentage|floatformat:2 }}%)</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Cost</h6>
+                <h3>${{ investment.total_cost|floatformat:2|intcomma }}</h3>
+                <small>Avg: ${{ investment.average_cost|floatformat:2|intcomma }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Shares</h6>
+                <h3>{{ investment.shares|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Performance Metrics -->
+{% if metrics %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-chart-bar"></i> {{ days }}-Day Performance Metrics</h5>
+            </div>
+            <div class="card-body">
+                {% if is_annuity %}
+                <!-- Annuity-specific metrics -->
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <small class="text-muted">{% if days > 30 %}Annualized Return{% else %}Period Return{% endif %}</small>
+                            <h4 class="{% if metrics.annualized_return >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                {{ metrics.annualized_return|floatformat:2 }}%
+                            </h4>
+                            {% if days > 30 %}
+                            <small class="text-muted">({{ metrics.period_return|floatformat:2 }}% total)</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <small class="text-muted">Period Gain/Loss</small>
+                            <h4 class="{% if metrics.period_gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                ${{ metrics.period_gain|floatformat:2|intcomma }}
+                            </h4>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <small class="text-muted">Start Value</small>
+                            <h5>${{ metrics.start_value|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <small class="text-muted">End Value</small>
+                            <h5>${{ metrics.end_value|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <small class="text-muted">Investment Gain</small>
+                            <h5 class="{% if metrics.period_net_investment_change >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                ${{ metrics.period_net_investment_change|floatformat:2|intcomma }}
+                            </h5>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <small class="text-muted">Premiums Paid During Period</small>
+                            <h5>${{ metrics.period_premiums|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <small class="text-muted">Withdrawals During Period</small>
+                            <h5>${{ metrics.period_withdrawals|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <!-- Stock/Share-based investment metrics -->
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <small class="text-muted">{% if days > 30 %}Annualized Return{% else %}Period Return{% endif %}</small>
+                            <h4 class="{% if metrics.annualized_return >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                {{ metrics.annualized_return|floatformat:2 }}%
+                            </h4>
+                            {% if days > 30 %}
+                            <small class="text-muted">({{ metrics.period_return|floatformat:2 }}% total)</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <small class="text-muted">Volatility</small>
+                            <h4>{{ metrics.volatility|floatformat:2 }}%</h4>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <small class="text-muted">Average Price</small>
+                            <h5>${{ metrics.avg_price|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <small class="text-muted">High</small>
+                            <h5>${{ metrics.high|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <small class="text-muted">Low</small>
+                            <h5>${{ metrics.low|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Chart -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-area"></i>
+                    {% if is_annuity %}
+                        Total Value Over Time
+                    {% else %}
+                        Price History
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <canvas id="performanceChart" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Transactions -->
+<div class="row">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-history"></i> Recent Transactions</h5>
+                <a href="/admin/investco/transaction/add/?investment={{ investment.id }}"
+                   class="btn btn-sm btn-primary">
+                    <i class="fas fa-plus"></i> Add Transaction
+                </a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_transactions %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th class="text-end">Shares</th>
+                                <th class="text-end">Price</th>
+                                <th class="text-end">Amount</th>
+                                <th class="text-end">Fee</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in recent_transactions %}
+                            <tr>
+                                <td>{{ transaction.date|date:"M d, Y H:i" }}</td>
+                                <td><span class="badge bg-info">{{ transaction.get_transaction_type_display }}</span></td>
+                                <td class="text-end">{% if transaction.shares %}{{ transaction.shares|floatformat:2|intcomma }}{% else %}-{% endif %}</td>
+                                <td class="text-end">{% if transaction.price %}<small>$</small>{{ transaction.price|floatformat:2|intcomma }}{% else %}-{% endif %}</td>
+                                <td class="text-end">{% if transaction.amount %}<small>$</small>{{ transaction.amount|floatformat:2|intcomma }}{% else %}-{% endif %}</td>
+                                <td class="text-end"><small>$</small>{{ transaction.fee|floatformat:2|intcomma }}</td>
+                                <td class="text-end"><strong><small>$</small>{{ transaction.total_amount|floatformat:2|intcomma }}</strong></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-muted">
+                    <p>No transactions recorded yet.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const ctx = document.getElementById('performanceChart').getContext('2d');
+    const dates = {{ chart_dates|safe }};
+
+    {% if is_annuity %}
+    // Annuity: Total Value Chart with optional GWB overlay
+    const values = {{ chart_values|safe }};
+
+    // Build datasets array
+    const datasets = [{
+        label: 'Account Value',
+        data: values,
+        borderColor: '#28a745',
+        backgroundColor: 'rgba(40, 167, 69, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        yAxisID: 'y'
+    }];
+
+    {% if has_gwb_data %}
+    // Add GWB line if data exists
+    const gwbDates = {{ gwb_dates|safe }};
+    const gwbValues = {{ gwb_values|safe }};
+
+    // Create a mapping of dates to GWB values for alignment
+    const gwbMap = {};
+    gwbDates.forEach((date, idx) => {
+        gwbMap[date] = gwbValues[idx];
+    });
+
+    // Align GWB data with main chart dates (null for dates without GWB data)
+    const alignedGwbData = dates.map(date => gwbMap[date] || null);
+
+    datasets.push({
+        label: 'Guaranteed Withdrawal Balance',
+        data: alignedGwbData,
+        borderColor: '#007bff',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [5, 5],
+        fill: false,
+        tension: 0.4,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        yAxisID: 'y',
+        spanGaps: true  // Connect points even with nulls in between
+    });
+    {% endif %}
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: dates,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y;
+                            if (value === null) return null;
+                            return label + ': $' + value.toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                            });
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    ticks: {
+                        maxTicksLimit: 10
+                    }
+                }
+            }
+        }
+    });
+    {% else %}
+    // Share-based: Price Chart
+    const prices = {{ chart_prices|safe }};
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: dates,
+            datasets: [{
+                label: 'Price',
+                data: prices,
+                borderColor: '#28a745',
+                backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            return '$' + context.parsed.y.toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                            });
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    ticks: {
+                        maxTicksLimit: 10
+                    }
+                }
+            }
+        }
+    });
+    {% endif %}
+</script>
+{% endblock %}

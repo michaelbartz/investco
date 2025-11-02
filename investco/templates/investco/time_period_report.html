@@ -1,0 +1,252 @@
+{% extends 'investco/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ portfolio.name }} Time Period Report - InvestCo{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'investco:home' %}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_list' %}">Portfolios</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_detail' portfolio.id %}">{{ portfolio.name }}</a></li>
+                <li class="breadcrumb-item active">Time Period Report</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="fas fa-calendar"></i> {{ portfolio.name }} - Time Period Performance</h1>
+        <p class="text-muted">Compare performance across different time periods</p>
+    </div>
+</div>
+
+<!-- Current Summary -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Current Value</h6>
+                <h3>${{ total_value|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Cost</h6>
+                <h3>${{ total_cost|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">All-Time Gain/Loss</h6>
+                <h3 class="{% if total_gain_loss >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                    ${{ total_gain_loss|floatformat:2|intcomma }}
+                </h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Period Performance Table -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-table"></i> Performance by Time Period</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Period</th>
+                                <th class="text-end">Days</th>
+                                <th class="text-end">Start Value</th>
+                                <th class="text-end">End Value</th>
+                                <th class="text-end">Gain/Loss</th>
+                                <th class="text-end">Return % (Ann.)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>7 Days</strong></td>
+                                <td class="text-end">{{ period_performance.7d.days }}</td>
+                                <td class="text-end">${{ period_performance.7d.start_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">${{ period_performance.7d.end_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.7d.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ period_performance.7d.gain|floatformat:2|intcomma }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.7d.annualized_return >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        {{ period_performance.7d.annualized_return|floatformat:2 }}%
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>30 Days</strong></td>
+                                <td class="text-end">{{ period_performance.30d.days }}</td>
+                                <td class="text-end">${{ period_performance.30d.start_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">${{ period_performance.30d.end_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.30d.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ period_performance.30d.gain|floatformat:2|intcomma }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.30d.annualized_return >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        {{ period_performance.30d.annualized_return|floatformat:2 }}%
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>90 Days</strong></td>
+                                <td class="text-end">{{ period_performance.90d.days }}</td>
+                                <td class="text-end">${{ period_performance.90d.start_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">${{ period_performance.90d.end_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.90d.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ period_performance.90d.gain|floatformat:2|intcomma }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.90d.annualized_return >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        {{ period_performance.90d.annualized_return|floatformat:2 }}%
+                                    </span><br>
+                                    <small class="text-muted">({{ period_performance.90d.return|floatformat:2 }}% total)</small>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>1 Year</strong></td>
+                                <td class="text-end">{{ period_performance.1y.days }}</td>
+                                <td class="text-end">${{ period_performance.1y.start_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">${{ period_performance.1y.end_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.1y.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ period_performance.1y.gain|floatformat:2|intcomma }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.1y.annualized_return >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        {{ period_performance.1y.annualized_return|floatformat:2 }}%
+                                    </span><br>
+                                    <small class="text-muted">({{ period_performance.1y.return|floatformat:2 }}% total)</small>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Year to Date</strong></td>
+                                <td class="text-end">{{ period_performance.ytd.days }}</td>
+                                <td class="text-end">${{ period_performance.ytd.start_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">${{ period_performance.ytd.end_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.ytd.gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ period_performance.ytd.gain|floatformat:2|intcomma }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <span class="{% if period_performance.ytd.annualized_return >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        {{ period_performance.ytd.annualized_return|floatformat:2 }}%
+                                    </span><br>
+                                    <small class="text-muted">({{ period_performance.ytd.return|floatformat:2 }}% total)</small>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Return Percentage Chart -->
+<div class="row">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Return Percentage by Period</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="periodChart" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Links -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="btn-group" role="group">
+            <a href="{% url 'investco:portfolio_performance' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-line"></i> Portfolio Performance
+            </a>
+            <a href="{% url 'investco:asset_allocation_report' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-pie-chart"></i> Asset Allocation
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const ctx = document.getElementById('periodChart').getContext('2d');
+
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['7 Days', '30 Days', '90 Days', '1 Year', 'YTD'],
+            datasets: [{
+                label: 'Annualized Return %',
+                data: [
+                    {{ period_performance.7d.annualized_return|floatformat:2 }},
+                    {{ period_performance.30d.annualized_return|floatformat:2 }},
+                    {{ period_performance.90d.annualized_return|floatformat:2 }},
+                    {{ period_performance.1y.annualized_return|floatformat:2 }},
+                    {{ period_performance.ytd.annualized_return|floatformat:2 }}
+                ],
+                backgroundColor: [
+                    {{ period_performance.7d.annualized_return }} >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)',
+                    {{ period_performance.30d.annualized_return }} >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)',
+                    {{ period_performance.90d.annualized_return }} >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)',
+                    {{ period_performance.1y.annualized_return }} >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)',
+                    {{ period_performance.ytd.annualized_return }} >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'
+                ],
+                borderColor: [
+                    {{ period_performance.7d.annualized_return }} >= 0 ? '#28a745' : '#dc3545',
+                    {{ period_performance.30d.annualized_return }} >= 0 ? '#28a745' : '#dc3545',
+                    {{ period_performance.90d.annualized_return }} >= 0 ? '#28a745' : '#dc3545',
+                    {{ period_performance.1y.annualized_return }} >= 0 ? '#28a745' : '#dc3545',
+                    {{ period_performance.ytd.annualized_return }} >= 0 ? '#28a745' : '#dc3545'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

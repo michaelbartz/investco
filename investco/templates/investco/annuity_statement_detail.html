@@ -1,0 +1,349 @@
+{% extends 'investco/base.html' %}
+{% load humanize %}
+
+{% block title %}Statement {{ statement.statement_date|date:"M d, Y" }} - InvestCo{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'investco:home' %}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_detail' investment.portfolio.id %}">{{ investment.portfolio.name }}</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:investment_performance' investment.id %}">{{ investment.name }}</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:investment_statements' investment.id %}">Statements</a></li>
+                <li class="breadcrumb-item active">{{ statement.statement_date|date:"M d, Y" }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h1><i class="fas fa-file-invoice"></i> Statement - {{ statement.statement_date|date:"M d, Y" }}</h1>
+                <p class="text-muted">
+                    {{ investment.name }} - Period: {{ statement.period_start|date:"M d, Y" }} to {{ statement.period_end|date:"M d, Y" }}
+                </p>
+            </div>
+            <div>
+                <a href="{% url 'investco:investment_statements' investment.id %}" class="btn btn-outline-secondary me-2">
+                    <i class="fas fa-arrow-left"></i> Back to Statements
+                </a>
+                <a href="/admin/investco/annuitystatement/{{ statement.id }}/change/" class="btn btn-primary">
+                    <i class="fas fa-edit"></i> Edit Statement
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Account Values Summary -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Beginning Value</h6>
+                <h3>${{ statement.annuitystatement.beginning_value|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">{{ statement.period_start|date:"M d, Y" }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Ending Value</h6>
+                <h3>${{ statement.annuitystatement.ending_value|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">{{ statement.period_end|date:"M d, Y" }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Change</h6>
+                <h3 class="{% if statement.annuitystatement.net_change >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                    ${{ statement.annuitystatement.net_change|floatformat:2|intcomma }}
+                </h3>
+                <small>
+                    {% if statement.annuitystatement.reconciles %}
+                    <span class="badge bg-success">✓ Reconciles</span>
+                    {% else %}
+                    <span class="badge bg-warning">✗ Does not reconcile</span>
+                    <br><small class="text-muted">Calculated: ${{ statement.annuitystatement.calculated_change|floatformat:2|intcomma }}</small>
+                    {% endif %}
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reconciliation Status -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-check-double"></i> Reconciliation Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-3">Internal Reconciliation</h6>
+                        {% if statement.annuitystatement.reconciles %}
+                        <div class="alert alert-success mb-0">
+                            <i class="fas fa-check-circle"></i> <strong>Statement Reconciles</strong>
+                            <p class="mb-0 mt-2">
+                                <small>Beginning + Premiums + Net Change - Withdrawals - Tax = Ending Value</small><br>
+                                <small>${{ statement.annuitystatement.beginning_value|floatformat:2|intcomma }} +
+                                ${{ statement.annuitystatement.premiums|floatformat:2|intcomma }} +
+                                ${{ statement.annuitystatement.net_change|floatformat:2|intcomma }} -
+                                ${{ statement.annuitystatement.withdrawals|floatformat:2|intcomma }} -
+                                ${{ statement.annuitystatement.tax_withholding|floatformat:2|intcomma }} =
+                                ${{ statement.annuitystatement.ending_value|floatformat:2|intcomma }}</small>
+                            </p>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning mb-0">
+                            <i class="fas fa-exclamation-triangle"></i> <strong>Statement Does Not Reconcile</strong>
+                            <p class="mb-0 mt-2">
+                                <small>Calculated ending: ${{ statement.annuitystatement.calculated_change|floatformat:2|intcomma }}</small><br>
+                                <small>Actual ending: ${{ statement.annuitystatement.ending_value|floatformat:2|intcomma }}</small><br>
+                                <small>Difference: ${{ statement.annuitystatement.ending_value|add:statement.annuitystatement.calculated_change|floatformat:2|intcomma|default:"0.00" }}</small>
+                            </p>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-3">Statement Chaining</h6>
+                        {% if statement.annuitystatement.chains_with_previous is None %}
+                        <div class="alert alert-secondary mb-0">
+                            <i class="fas fa-info-circle"></i> <strong>First Statement</strong>
+                            <p class="mb-0 mt-2">
+                                <small>No previous statement to chain with</small>
+                            </p>
+                        </div>
+                        {% elif statement.annuitystatement.chains_with_previous %}
+                        <div class="alert alert-success mb-0">
+                            <i class="fas fa-link"></i> <strong>Chains Correctly</strong>
+                            <p class="mb-0 mt-2">
+                                <small>This statement's beginning value matches the previous statement's ending value</small>
+                            </p>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-danger mb-0">
+                            <i class="fas fa-unlink"></i> <strong>Chain Gap Detected</strong>
+                            <p class="mb-0 mt-2">
+                                {% with prev=statement.annuitystatement.previous_statement %}
+                                {% if prev %}
+                                <small>Previous statement ({{ prev.statement_date|date:"M d, Y" }}) ended at: ${{ prev.annuitystatement.ending_value|floatformat:2|intcomma }}</small><br>
+                                <small>This statement begins at: ${{ statement.annuitystatement.beginning_value|floatformat:2|intcomma }}</small><br>
+                                <small><strong>Gap: ${{ statement.annuitystatement.chain_gap|floatformat:2|intcomma }}</strong></small>
+                                {% endif %}
+                                {% endwith %}
+                            </p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Period Activity -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-exchange-alt"></i> Period Activity</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <small class="text-muted">Premiums</small>
+                            <h4>${{ statement.annuitystatement.premiums|floatformat:2|intcomma }}</h4>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <small class="text-muted">Net Investment Change</small>
+                            <h4 class="{% if statement.annuitystatement.net_change >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                ${{ statement.annuitystatement.net_change|floatformat:2|intcomma }}
+                            </h4>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <small class="text-muted">Withdrawals</small>
+                            <h4>${{ statement.annuitystatement.withdrawals|floatformat:2|intcomma }}</h4>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <small class="text-muted">Tax Withholding</small>
+                            <h4>${{ statement.annuitystatement.tax_withholding|floatformat:2|intcomma }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Guaranteed Benefits -->
+{% if statement.annuitystatement.death_benefit or statement.annuitystatement.guaranteed_withdrawal_amount_annually %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-shield-alt"></i> Guaranteed Benefits</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% if statement.annuitystatement.death_benefit %}
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <small class="text-muted">Death Benefit</small>
+                            <h5>${{ statement.annuitystatement.death_benefit|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if statement.annuitystatement.remaining_guaranteed_balance %}
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <small class="text-muted">Remaining Guaranteed Balance</small>
+                            <h5>${{ statement.annuitystatement.remaining_guaranteed_balance|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if statement.annuitystatement.earnings_determination_baseline %}
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <small class="text-muted">Earnings Determination Baseline</small>
+                            <h5>${{ statement.annuitystatement.earnings_determination_baseline|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if statement.annuitystatement.guaranteed_withdrawal_amount_annually %}
+                <hr>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <small class="text-muted">Guaranteed Withdrawal Amount (Annual)</small>
+                            <h5>${{ statement.annuitystatement.guaranteed_withdrawal_amount_annually|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    {% if statement.annuitystatement.guaranteed_withdrawal_amount_remaining %}
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <small class="text-muted">Remaining This Year</small>
+                            <h5>${{ statement.annuitystatement.guaranteed_withdrawal_amount_remaining|floatformat:2|intcomma }}</h5>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if statement.annuitystatement.percent_of_guaranteed_available_for_withdrawal %}
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <small class="text-muted">Withdrawal Percentage</small>
+                            <h5>{{ statement.annuitystatement.percent_of_guaranteed_available_for_withdrawal|floatformat:2 }}%</h5>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Generated Transactions -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-list"></i> Generated Transactions</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if transactions %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th class="text-end">Amount</th>
+                                <th>Date</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in transactions %}
+                            <tr>
+                                <td>
+                                    <span class="badge
+                                        {% if transaction.transaction_type == 'PREMIUM' %}bg-success
+                                        {% elif transaction.transaction_type == 'WITHDRAWAL' %}bg-danger
+                                        {% elif transaction.transaction_type == 'TAX_WITHHOLDING' %}bg-warning
+                                        {% elif transaction.transaction_type == 'NET_CHANGE' %}bg-info
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ transaction.get_transaction_type_display }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <strong>${{ transaction.amount|floatformat:2|intcomma }}</strong>
+                                </td>
+                                <td>{{ transaction.date|date:"M d, Y H:i" }}</td>
+                                <td><small class="text-muted">{{ transaction.notes }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-muted">
+                    <p>No transactions generated from this statement.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Attached Document -->
+{% if statement.document %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-paperclip"></i> Attached Document</h5>
+            </div>
+            <div class="card-body">
+                <a href="{{ statement.document.url }}" target="_blank" class="btn btn-outline-primary">
+                    <i class="fas fa-download"></i> Download Statement
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Notes -->
+{% if statement.notes %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-sticky-note"></i> Notes</h5>
+            </div>
+            <div class="card-body">
+                <p>{{ statement.notes|linebreaks }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
