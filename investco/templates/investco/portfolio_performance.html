@@ -1,0 +1,230 @@
+{% extends 'investco/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ portfolio.name }} Performance - InvestCo{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'investco:home' %}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_list' %}">Portfolios</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_detail' portfolio.id %}">{{ portfolio.name }}</a></li>
+                <li class="breadcrumb-item active">Performance</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="fas fa-chart-line"></i> {{ portfolio.name }} - Performance Report</h1>
+    </div>
+</div>
+
+<!-- Time Period Selector -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="btn-group" role="group">
+            <a href="?days=7" class="btn btn-outline-primary {% if days == 7 %}active{% endif %}">7 Days</a>
+            <a href="?days=30" class="btn btn-outline-primary {% if days == 30 %}active{% endif %}">30 Days</a>
+            <a href="?days=90" class="btn btn-outline-primary {% if days == 90 %}active{% endif %}">90 Days</a>
+            <a href="?days=365" class="btn btn-outline-primary {% if days == 365 %}active{% endif %}">1 Year</a>
+            <a href="?days=all" class="btn btn-outline-primary {% if days == 'all' %}active{% endif %}">All Time</a>
+        </div>
+    </div>
+</div>
+
+<!-- Performance Metrics -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Current Value</h6>
+                <h3>${{ total_value|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Gain/Loss</h6>
+                <h3 class="{% if total_gain_loss >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                    ${{ total_gain_loss|floatformat:2|intcomma }}
+                </h3>
+                <small>({{ gain_loss_percentage|floatformat:2 }}%)</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">{% if days > 30 %}Annualized Return{% else %}Period Return{% endif %}</h6>
+                <h3 class="{% if annualized_return >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                    {{ annualized_return|floatformat:2 }}%
+                </h3>
+                <small>{% if days > 30 %}{{ days }} days ({{ period_return|floatformat:2 }}% total){% else %}{{ days }} days{% endif %}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Period Range</h6>
+                <div>
+                    <small class="text-muted">High:</small> <strong>${{ period_high|floatformat:2|intcomma }}</strong>
+                </div>
+                <div>
+                    <small class="text-muted">Low:</small> <strong>${{ period_low|floatformat:2|intcomma }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Performance Chart -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-chart-area"></i> Portfolio Value Over Time</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="performanceChart" height="80"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Investment Performance Breakdown -->
+<div class="row">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-list"></i> Investment Performance</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Investment</th>
+                                <th class="text-end">Current Value</th>
+                                <th class="text-end">Gain/Loss</th>
+                                <th class="text-end">Return %</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for investment in investments %}
+                            <tr>
+                                <td>
+                                    <strong>{{ investment.symbol|default:investment.name }}</strong>
+                                    <br><small class="text-muted">{{ investment.get_investment_type }}</small>
+                                </td>
+                                <td class="text-end">${{ investment.current_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <span class="{% if investment.gain_loss >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ investment.gain_loss|floatformat:2|intcomma }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <span class="{% if investment.gain_loss_percentage >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        {{ investment.gain_loss_percentage|floatformat:2 }}%
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <a href="{% url 'investco:investment_performance' investment.id %}"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-chart-line"></i> View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Links -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="btn-group" role="group">
+            <a href="{% url 'investco:time_period_report' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-calendar"></i> Time Period Report
+            </a>
+            <a href="{% url 'investco:asset_allocation_report' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-pie-chart"></i> Asset Allocation
+            </a>
+            <a href="{% url 'investco:comparative_performance' %}?portfolios={{ portfolio.id }}" class="btn btn-outline-secondary">
+                <i class="fas fa-balance-scale"></i> Compare
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const ctx = document.getElementById('performanceChart').getContext('2d');
+    const dates = {{ chart_dates|safe }};
+    const values = {{ chart_values|safe }};
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: dates,
+            datasets: [{
+                label: 'Portfolio Value',
+                data: values,
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            return '$' + context.parsed.y.toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                            });
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                },
+                x: {
+                    ticks: {
+                        maxTicksLimit: 10
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}
