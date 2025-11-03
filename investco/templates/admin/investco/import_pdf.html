@@ -1,0 +1,197 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block content %}
+<div id="content-main">
+    {% if messages %}
+    <ul class="messagelist">
+        {% for message in messages %}
+        <li class="{{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if not parsed_data %}
+    <!-- Step 1: Upload PDF -->
+    <div class="module">
+        <h2>Step 1: Upload PDF Statement</h2>
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="form-row">
+                <div>
+                    <label for="pdf_file">Select PDF file:</label>
+                    <input type="file" name="pdf_file" id="pdf_file" accept=".pdf" required>
+                </div>
+            </div>
+            <div class="submit-row">
+                <input type="submit" value="Parse PDF" class="default">
+                <a href="{% url 'admin:investco_annuitystatement_changelist' %}" class="button cancel-link">Cancel</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="module" style="margin-top: 20px;">
+        <h3>Instructions</h3>
+        <ul>
+            <li>Select a Jackson annuity quarterly statement PDF</li>
+            <li>The system will extract key financial data automatically</li>
+            <li>You'll review and verify the extracted values before creating the statement</li>
+            <li>This works best with standard Jackson quarterly statements</li>
+        </ul>
+    </div>
+
+    {% else %}
+    <!-- Step 2: Verify and Confirm -->
+    <div class="module">
+        <h2>Step 2: Verify Extracted Data</h2>
+        <p><strong>Source:</strong> {{ parsed_data.pdf_filename }}</p>
+
+        {% if validation.warnings %}
+        <div class="messagelist">
+            {% for warning in validation.warnings %}
+            <div class="warning">⚠️ {{ warning }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+
+            <fieldset class="module aligned">
+                <h2>Annuity Selection</h2>
+                {% if parsed_data.policy_number %}
+                <div class="form-row">
+                    <div>
+                        <label>Policy Number (from PDF):</label>
+                        <span style="font-weight: bold;">{{ parsed_data.policy_number }}</span>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="form-row">
+                    <div>
+                        <label for="annuity" class="required">Annuity:</label>
+                        <select name="annuity" id="annuity" required>
+                            <option value="">Select an annuity...</option>
+                            {% for annuity in annuities %}
+                            <option value="{{ annuity.id }}" {% if parsed_data.matched_annuity_id == annuity.id %}selected{% endif %}>
+                                {{ annuity.name }} ({{ annuity.insurance_company }}){% if annuity.policy_number %} - {{ annuity.policy_number }}{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="module aligned">
+                <h2>Statement Information</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="statement_date" class="required">Statement Date:</label>
+                        <input type="date" name="statement_date" id="statement_date" value="{{ parsed_data.statement_date }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="period_start" class="required">Period Start:</label>
+                        <input type="date" name="period_start" id="period_start" value="{{ parsed_data.period_start }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="period_end" class="required">Period End:</label>
+                        <input type="date" name="period_end" id="period_end" value="{{ parsed_data.period_end }}" required>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="module aligned">
+                <h2>Account Values</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="beginning_value" class="required">Beginning Value:</label>
+                        <input type="text" name="beginning_value" id="beginning_value" value="{{ parsed_data.beginning_value }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="ending_value" class="required">Ending Value:</label>
+                        <input type="text" name="ending_value" id="ending_value" value="{{ parsed_data.ending_value }}" required>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="module aligned">
+                <h2>Period Activity</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="premiums" class="required">Premiums:</label>
+                        <input type="text" name="premiums" id="premiums" value="{{ parsed_data.premiums }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="withdrawals" class="required">Withdrawals:</label>
+                        <input type="text" name="withdrawals" id="withdrawals" value="{{ parsed_data.withdrawals }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="tax_withholding" class="required">Tax Withholding:</label>
+                        <input type="text" name="tax_withholding" id="tax_withholding" value="{{ parsed_data.tax_withholding }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="net_change" class="required">Net Change:</label>
+                        <input type="text" name="net_change" id="net_change" value="{{ parsed_data.net_change }}" required>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="module aligned">
+                <h2>Guaranteed Benefits (Optional)</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="remaining_guaranteed_balance">Remaining Guaranteed Balance:</label>
+                        <input type="text" name="remaining_guaranteed_balance" id="remaining_guaranteed_balance" value="{{ parsed_data.remaining_guaranteed_balance }}">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="death_benefit">Death Benefit:</label>
+                        <input type="text" name="death_benefit" id="death_benefit" value="{{ parsed_data.death_benefit }}">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="earnings_determination_baseline">Earnings Determination Baseline:</label>
+                        <input type="text" name="earnings_determination_baseline" id="earnings_determination_baseline" value="{{ parsed_data.earnings_determination_baseline }}">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="guaranteed_withdrawal_balance_bonus_baseline">GWB Bonus Baseline:</label>
+                        <input type="text" name="guaranteed_withdrawal_balance_bonus_baseline" id="guaranteed_withdrawal_balance_bonus_baseline" value="{{ parsed_data.guaranteed_withdrawal_balance_bonus_baseline }}">
+                    </div>
+                </div>
+            </fieldset>
+
+            <div class="submit-row">
+                <input type="submit" name="confirm_import" value="Create Statement" class="default">
+                <input type="submit" name="cancel_import" value="Cancel" class="button cancel-link">
+            </div>
+        </form>
+    </div>
+
+    <div class="module" style="margin-top: 20px;">
+        <h3>Review Checklist</h3>
+        <ul>
+            <li>✓ Verify all dollar amounts match the PDF</li>
+            <li>✓ Check that the statement date is correct</li>
+            <li>✓ Ensure the correct annuity is selected</li>
+            <li>✓ Review any warnings about reconciliation mismatches</li>
+        </ul>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
