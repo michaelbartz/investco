@@ -1,0 +1,16 @@
+{% extends "admin/change_form.html" %}
+
+{% block content_title %}
+    {% if not original %}
+        {# This is an "Add" form #}
+        <h1>{{ title }}</h1>
+        <div style="background: #e8f4f8; border-left: 4px solid #0c4b8e; padding: 15px; margin-bottom: 20px;">
+            <strong>💡 Tip:</strong> You can automatically import statement data from a PDF file instead of entering it manually.
+            <a href="{% url 'admin:investco_annuitystatement_import_pdf' %}" class="button" style="margin-left: 15px; background: #417690; color: white; padding: 8px 15px; text-decoration: none; border-radius: 4px;">
+                📄 Import from PDF
+            </a>
+        </div>
+    {% else %}
+        {{ block.super }}
+    {% endif %}
+{% endblock %}
