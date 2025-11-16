@@ -28,9 +28,19 @@
                 <a href="{% url 'investco:investment_performance' investment.id %}" class="btn btn-outline-secondary me-2">
                     <i class="fas fa-chart-line"></i> Back to Performance
                 </a>
+                {% if investment.get_investment_type == 'Annuity' %}
                 <a href="/admin/investco/annuitystatement/add/?investment={{ investment.id }}" class="btn btn-primary">
                     <i class="fas fa-plus"></i> Add Statement
                 </a>
+                {% elif investment.get_investment_type == '401k' %}
+                <a href="/admin/investco/retirement401kstatement/add/?investment={{ investment.id }}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Statement
+                </a>
+                {% else %}
+                <a href="/admin/investco/statement/add/?investment={{ investment.id }}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Statement
+                </a>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -53,9 +63,17 @@
                                 <th>Period</th>
                                 <th class="text-end">Beginning Value</th>
                                 <th class="text-end">Ending Value</th>
-                                <th class="text-end">Net Change</th>
+                                <th class="text-end">Change</th>
+                                {% if investment.get_investment_type == '401(k) Retirement Account' %}
+                                <th class="text-end">Contributions</th>
+                                <th class="text-end">Gain/Loss</th>
+                                {% elif investment.get_investment_type == 'Brokerage Account' %}
+                                <th class="text-end">Deposits</th>
+                                <th class="text-end">Income</th>
+                                {% else %}
                                 <th class="text-end">Premiums</th>
                                 <th class="text-end">Withdrawals</th>
+                                {% endif %}
                                 <th class="text-center">Reconciles</th>
                                 <th class="text-center">Chains</th>
                                 <th class="text-center">Actions</th>
@@ -120,6 +138,116 @@
                                     </a>
                                 </td>
                             </tr>
+                            {% elif statement.retirement401kstatement %}
+                            <tr>
+                                <td>
+                                    <strong>{{ statement.statement_date|date:"M d, Y" }}</strong>
+                                    {% if statement.document %}
+                                    <br><small class="text-muted"><i class="fas fa-paperclip"></i> Has attachment</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small class="text-muted">
+                                        {{ statement.period_start|date:"M d" }} - {{ statement.period_end|date:"M d, Y" }}
+                                    </small>
+                                </td>
+                                <td class="text-end">${{ statement.retirement401kstatement.beginning_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end"><strong>${{ statement.retirement401kstatement.ending_value|floatformat:2|intcomma }}</strong></td>
+                                <td class="text-end {% if statement.retirement401kstatement.calculated_change >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                    ${{ statement.retirement401kstatement.calculated_change|floatformat:2|intcomma }}
+                                </td>
+                                <td class="text-end">
+                                    {% if statement.retirement401kstatement.total_contributions > 0 %}
+                                    ${{ statement.retirement401kstatement.total_contributions|floatformat:2|intcomma }}
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end {% if statement.retirement401kstatement.investment_gain_loss >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                    ${{ statement.retirement401kstatement.investment_gain_loss|floatformat:2|intcomma }}
+                                </td>
+                                <td class="text-center">
+                                    {% if statement.retirement401kstatement.reconciles %}
+                                    <span class="badge bg-success">✓</span>
+                                    {% else %}
+                                    <span class="badge bg-warning">✗</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if statement.retirement401kstatement.chains_with_previous is None %}
+                                    <span class="badge bg-secondary" title="First statement">-</span>
+                                    {% elif statement.retirement401kstatement.chains_with_previous %}
+                                    <span class="badge bg-success" title="Chains correctly with previous statement">✓</span>
+                                    {% else %}
+                                    <span class="badge bg-danger" title="Gap: ${{ statement.retirement401kstatement.chain_gap|floatformat:2|intcomma }}">✗</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <a href="{% url 'investco:statement_detail' statement.id %}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye"></i> View
+                                    </a>
+                                    <a href="/admin/investco/retirement401kstatement/{{ statement.id }}/change/" class="btn btn-sm btn-outline-secondary">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% elif statement.brokerageaccountstatement %}
+                            <tr>
+                                <td>
+                                    <strong>{{ statement.statement_date|date:"M d, Y" }}</strong>
+                                    {% if statement.document %}
+                                    <br><small class="text-muted"><i class="fas fa-paperclip"></i> Has attachment</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small class="text-muted">
+                                        {{ statement.period_start|date:"M d" }} - {{ statement.period_end|date:"M d, Y" }}
+                                    </small>
+                                </td>
+                                <td class="text-end">${{ statement.brokerageaccountstatement.beginning_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end"><strong>${{ statement.brokerageaccountstatement.ending_value|floatformat:2|intcomma }}</strong></td>
+                                <td class="text-end {% if statement.brokerageaccountstatement.calculated_change >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                    ${{ statement.brokerageaccountstatement.calculated_change|floatformat:2|intcomma }}
+                                </td>
+                                <td class="text-end">
+                                    {% if statement.brokerageaccountstatement.deposits > 0 %}
+                                    ${{ statement.brokerageaccountstatement.deposits|floatformat:2|intcomma }}
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    {% if statement.brokerageaccountstatement.total_income > 0 %}
+                                    ${{ statement.brokerageaccountstatement.total_income|floatformat:2|intcomma }}
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if statement.brokerageaccountstatement.reconciles %}
+                                    <span class="badge bg-success">✓</span>
+                                    {% else %}
+                                    <span class="badge bg-warning">✗</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if statement.brokerageaccountstatement.chains_with_previous is None %}
+                                    <span class="badge bg-secondary" title="First statement">-</span>
+                                    {% elif statement.brokerageaccountstatement.chains_with_previous %}
+                                    <span class="badge bg-success" title="Chains correctly with previous statement">✓</span>
+                                    {% else %}
+                                    <span class="badge bg-danger" title="Gap: ${{ statement.brokerageaccountstatement.chain_gap|floatformat:2|intcomma }}">✗</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <a href="{% url 'investco:statement_detail' statement.id %}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye"></i> View
+                                    </a>
+                                    <a href="/admin/investco/brokerageaccountstatement/{{ statement.id }}/change/" class="btn btn-sm btn-outline-secondary">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                </td>
+                            </tr>
                             {% endif %}
                             {% endfor %}
                         </tbody>
@@ -130,9 +258,19 @@
                     <i class="fas fa-file-invoice fa-3x mb-3"></i>
                     <h5>No statements yet</h5>
                     <p>Add your first statement to start tracking your investment activity.</p>
+                    {% if investment.get_investment_type == 'Annuity' %}
                     <a href="/admin/investco/annuitystatement/add/?investment={{ investment.id }}" class="btn btn-primary">
                         <i class="fas fa-plus"></i> Add First Statement
                     </a>
+                    {% elif investment.get_investment_type == '401k' %}
+                    <a href="/admin/investco/retirement401kstatement/add/?investment={{ investment.id }}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Add First Statement
+                    </a>
+                    {% else %}
+                    <a href="/admin/investco/statement/add/?investment={{ investment.id }}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Add First Statement
+                    </a>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>

@@ -31,6 +31,8 @@
             <a href="?days=30" class="btn btn-outline-primary {% if days == 30 %}active{% endif %}">30 Days</a>
             <a href="?days=90" class="btn btn-outline-primary {% if days == 90 %}active{% endif %}">90 Days</a>
             <a href="?days=365" class="btn btn-outline-primary {% if days == 365 %}active{% endif %}">1 Year</a>
+            <a href="?days=730" class="btn btn-outline-primary {% if days == 730 %}active{% endif %}">2 Years</a>
+            <a href="?days=1825" class="btn btn-outline-primary {% if days == 1825 %}active{% endif %}">5 Years</a>
             <a href="?days=all" class="btn btn-outline-primary {% if days == 'all' %}active{% endif %}">All Time</a>
         </div>
     </div>
@@ -159,6 +161,9 @@
             </a>
             <a href="{% url 'investco:asset_allocation_report' portfolio.id %}" class="btn btn-outline-secondary">
                 <i class="fas fa-pie-chart"></i> Asset Allocation
+            </a>
+            <a href="{% url 'investco:retirement_planner' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-umbrella-beach"></i> Retirement Planner
             </a>
             <a href="{% url 'investco:comparative_performance' %}?portfolios={{ portfolio.id }}" class="btn btn-outline-secondary">
                 <i class="fas fa-balance-scale"></i> Compare

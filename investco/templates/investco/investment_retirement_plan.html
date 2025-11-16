@@ -1,0 +1,248 @@
+{% extends 'investco/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ investment.symbol|default:investment.name }} Retirement Plan - InvestCo{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'investco:home' %}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_detail' portfolio.id %}">{{ portfolio.name }}</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:retirement_planner' portfolio.id %}">Retirement Planner</a></li>
+                <li class="breadcrumb-item active">{{ investment.symbol|default:investment.name }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="fas fa-calculator"></i> Retirement Plan - {{ investment.symbol|default:investment.name }}</h1>
+        <p class="text-muted">{{ investment.get_investment_type }} - {{ investment.name }}</p>
+    </div>
+</div>
+
+{% if not retirement_date %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>No Retirement Date Set</strong> - Set a retirement date on the portfolio to see projections.
+            <a href="/admin/investco/portfolio/{{ portfolio.id }}/change/" class="alert-link">Set Date Now</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Current Summary -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Current Value</h6>
+                <h3>${{ current_value|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    {% if years_to_retirement %}
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Years to Retirement</h6>
+                <h3>{{ years_to_retirement|floatformat:1 }}</h3>
+                <small class="text-muted">{{ retirement_date|date:"M d, Y" }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Projected Value</h6>
+                <h3 class="gain-positive">${{ projected_value|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">+${{ projected_gain|floatformat:2|intcomma }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Annual Income</h6>
+                <h3>${{ annual_income|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">per year</small>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if has_gwb %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            <strong>Guaranteed Withdrawal Benefit:</strong> This annuity has a guaranteed annual withdrawal amount of <strong>${{ gwb_amount|floatformat:2|intcomma }}</strong>. This amount will be used automatically for retirement income calculations.
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Planning Parameters Form -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-sliders-h"></i> Retirement Planning Parameters</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <!-- Future Value Parameters -->
+                    <h6 class="mt-3 mb-3">Future Value (Pre-Retirement Growth)</h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="expected_return" class="form-label">Expected Annual Return (%)</label>
+                                <input type="number" class="form-control" id="expected_return" name="expected_return"
+                                       value="{{ plan.expected_return }}" step="0.01" required>
+                                <small class="form-text text-muted">Expected average annual return percentage</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="continued_investment_amount" class="form-label">Continued Contributions ($)</label>
+                                <input type="number" class="form-control" id="continued_investment_amount" name="continued_investment_amount"
+                                       value="{{ plan.continued_investment_amount }}" step="0.01" required>
+                                <small class="form-text text-muted">Amount of ongoing contributions</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="continued_investment_frequency" class="form-label">Contribution Frequency</label>
+                                <select class="form-select" id="continued_investment_frequency" name="continued_investment_frequency">
+                                    <option value="MONTHLY" {% if plan.continued_investment_frequency == 'MONTHLY' %}selected{% endif %}>Monthly</option>
+                                    <option value="ANNUAL" {% if plan.continued_investment_frequency == 'ANNUAL' %}selected{% endif %}>Annual</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="contribution_years" class="form-label">Years of Contributions (Optional)</label>
+                                <input type="number" class="form-control" id="contribution_years" name="contribution_years"
+                                       value="{{ plan.contribution_years|default:'' }}" step="0.1">
+                                <small class="form-text text-muted">Leave blank to contribute until retirement</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <!-- Post-Retirement Income Parameters -->
+                    <h6 class="mt-3 mb-3">Post-Retirement Income</h6>
+                    {% if not has_gwb %}
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="withdrawal_type" class="form-label">Withdrawal Strategy</label>
+                                <select class="form-select" id="withdrawal_type" name="withdrawal_type">
+                                    <option value="PERCENTAGE" {% if plan.withdrawal_type == 'PERCENTAGE' %}selected{% endif %}>Percentage</option>
+                                    <option value="FIXED_AMOUNT" {% if plan.withdrawal_type == 'FIXED_AMOUNT' %}selected{% endif %}>Fixed Amount</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="withdrawal_percentage" class="form-label">Withdrawal Percentage (%)</label>
+                                <input type="number" class="form-control" id="withdrawal_percentage" name="withdrawal_percentage"
+                                       value="{{ plan.withdrawal_percentage }}" step="0.01">
+                                <small class="form-text text-muted">Annual withdrawal as % of balance (e.g., 4% rule)</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="withdrawal_amount" class="form-label">Fixed Withdrawal Amount ($)</label>
+                                <input type="number" class="form-control" id="withdrawal_amount" name="withdrawal_amount"
+                                       value="{{ plan.withdrawal_amount }}" step="0.01">
+                                <small class="form-text text-muted">Fixed annual withdrawal amount</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-secondary">
+                        This annuity uses the Guaranteed Withdrawal Benefit of <strong>${{ gwb_amount|floatformat:2|intcomma }}</strong> per year. Withdrawal strategy settings will be ignored.
+                    </div>
+                    {% endif %}
+
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Save Retirement Plan
+                        </button>
+                        <a href="{% url 'investco:retirement_planner' portfolio.id %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Portfolio Planner
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Projection Details -->
+{% if years_to_retirement and projected_value %}
+<div class="row">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-chart-area"></i> Projection Details</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Growth Assumptions</h6>
+                        <ul>
+                            <li>Starting Value: <strong>${{ current_value|floatformat:2|intcomma }}</strong></li>
+                            <li>Expected Return: <strong>{{ plan.expected_return }}%</strong> per year</li>
+                            <li>Contributions: <strong>${{ plan.continued_investment_amount|floatformat:2|intcomma }}</strong> {{ plan.get_continued_investment_frequency_display|lower }}</li>
+                            <li>Time Horizon: <strong>{{ years_to_retirement|floatformat:1 }}</strong> years</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Retirement Income Strategy</h6>
+                        <ul>
+                            {% if has_gwb %}
+                            <li>Strategy: <strong>Guaranteed Withdrawal Benefit</strong></li>
+                            <li>Annual Income: <strong>${{ gwb_amount|floatformat:2|intcomma }}</strong></li>
+                            <li>Monthly Income: <strong>${{ gwb_amount|floatformat:2|intcomma|floatformat:0|floatformat:2 }}</strong></li>
+                            {% else %}
+                            <li>Strategy: <strong>{{ plan.get_withdrawal_type_display }}</strong></li>
+                            {% if plan.withdrawal_type == 'PERCENTAGE' %}
+                            <li>Withdrawal Rate: <strong>{{ plan.withdrawal_percentage }}%</strong> per year</li>
+                            {% else %}
+                            <li>Annual Withdrawal: <strong>${{ plan.withdrawal_amount|floatformat:2|intcomma }}</strong></li>
+                            {% endif %}
+                            <li>Estimated Annual Income: <strong>${{ annual_income|floatformat:2|intcomma }}</strong></li>
+                            <li>Estimated Monthly Income: <strong>${{ annual_income|floatformat:2|intcomma|floatformat:0|floatformat:2 }}</strong></li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="mt-3 p-3 bg-light">
+                    <small class="text-muted">
+                        <strong>Note:</strong> These projections are estimates based on the parameters you've provided.
+                        Actual results may vary due to market conditions, fees, taxes, and other factors.
+                        Calculations do not account for inflation or tax implications.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -28,7 +28,7 @@
             <div>
                 <div class="btn-group me-2" role="group">
                     <button type="button" class="btn btn-info dropdown-toggle" data-bs-toggle="dropdown">
-                        <i class="fas fa-chart-line"></i> Performance Reports
+                        <i class="fas fa-chart-line"></i> Reports & Planning
                     </button>
                     <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="{% url 'investco:portfolio_performance' portfolio.id %}">
@@ -39,6 +39,10 @@
                         </a></li>
                         <li><a class="dropdown-item" href="{% url 'investco:asset_allocation_report' portfolio.id %}">
                             <i class="fas fa-pie-chart"></i> Asset Allocation
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{% url 'investco:retirement_planner' portfolio.id %}">
+                            <i class="fas fa-umbrella-beach"></i> Retirement Planner
                         </a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{% url 'investco:comparative_performance' %}?portfolios={{ portfolio.id }}">
@@ -110,9 +114,6 @@
                                 <tr>
                                     <th>Type</th>
                                     <th>Symbol/Name</th>
-                                    <th class="text-end">Shares</th>
-                                    <th class="text-end">Avg Cost</th>
-                                    <th class="text-end">Current Price</th>
                                     <th class="text-end">Total Cost</th>
                                     <th class="text-end">Current Value</th>
                                     <th class="text-end">Gain/Loss</th>
@@ -131,9 +132,6 @@
                                             <br><small class="text-muted">{{ investment.name }}</small>
                                         {% endif %}
                                     </td>
-                                    <td class="text-end">{{ investment.shares|floatformat:2|intcomma }}</td>
-                                    <td class="text-end">${{ investment.average_cost|floatformat:2|intcomma }}</td>
-                                    <td class="text-end">${{ investment.current_price|floatformat:2|intcomma }}</td>
                                     <td class="text-end">${{ investment.total_cost|floatformat:2|intcomma }}</td>
                                     <td class="text-end">${{ investment.current_value|floatformat:2|intcomma }}</td>
                                     <td class="text-end">

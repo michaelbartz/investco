@@ -25,7 +25,13 @@
             </div>
             <div class="submit-row">
                 <input type="submit" value="Parse PDF" class="default">
+                {% if statement_type == '401k' %}
+                <a href="{% url 'admin:investco_retirement401kstatement_changelist' %}" class="button cancel-link">Cancel</a>
+                {% elif statement_type == 'brokerage' %}
+                <a href="{% url 'admin:investco_brokerageaccountstatement_changelist' %}" class="button cancel-link">Cancel</a>
+                {% else %}
                 <a href="{% url 'admin:investco_annuitystatement_changelist' %}" class="button cancel-link">Cancel</a>
+                {% endif %}
             </div>
         </form>
     </div>
@@ -33,10 +39,16 @@
     <div class="module" style="margin-top: 20px;">
         <h3>Instructions</h3>
         <ul>
-            <li>Select a Jackson annuity quarterly statement PDF</li>
+            {% if statement_type == '401k' %}
+            <li>Select a 401k quarterly statement PDF (John Hancock, etc.)</li>
+            {% elif statement_type == 'brokerage' %}
+            <li>Select a brokerage account statement PDF (M Holdings, etc.)</li>
+            {% else %}
+            <li>Select an annuity quarterly statement PDF (Jackson, TIAA, Valic, etc.)</li>
+            {% endif %}
             <li>The system will extract key financial data automatically</li>
             <li>You'll review and verify the extracted values before creating the statement</li>
-            <li>This works best with standard Jackson quarterly statements</li>
+            <li>This works best with standard quarterly statements</li>
         </ul>
     </div>
 
@@ -58,6 +70,53 @@
             {% csrf_token %}
 
             <fieldset class="module aligned">
+                {% if statement_type == '401k' %}
+                <h2>401k Account Selection</h2>
+                {% if parsed_data.account_number %}
+                <div class="form-row">
+                    <div>
+                        <label>Account Number (from PDF):</label>
+                        <span style="font-weight: bold;">{{ parsed_data.account_number }}</span>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="form-row">
+                    <div>
+                        <label for="account" class="required">401k Account:</label>
+                        <select name="account" id="account" required>
+                            <option value="">Select an account...</option>
+                            {% for account in accounts %}
+                            <option value="{{ account.id }}" {% if parsed_data.matched_401k_id == account.id %}selected{% endif %}>
+                                {{ account.name }} ({{ account.employer_name }}){% if account.account_number %} - {{ account.account_number }}{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                {% elif statement_type == 'brokerage' %}
+                <h2>Brokerage Account Selection</h2>
+                {% if parsed_data.account_number %}
+                <div class="form-row">
+                    <div>
+                        <label>Account Number (from PDF):</label>
+                        <span style="font-weight: bold;">{{ parsed_data.account_number }}</span>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="form-row">
+                    <div>
+                        <label for="account" class="required">Brokerage Account:</label>
+                        <select name="account" id="account" required>
+                            <option value="">Select an account...</option>
+                            {% for account in accounts %}
+                            <option value="{{ account.id }}" {% if parsed_data.matched_account_id == account.id %}selected{% endif %}>
+                                {{ account.name }} ({{ account.brokerage_firm }}){% if account.account_number %} - {{ account.account_number }}{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                {% else %}
                 <h2>Annuity Selection</h2>
                 {% if parsed_data.policy_number %}
                 <div class="form-row">
@@ -80,6 +139,7 @@
                         </select>
                     </div>
                 </div>
+                {% endif %}
             </fieldset>
 
             <fieldset class="module aligned">
@@ -120,6 +180,143 @@
                 </div>
             </fieldset>
 
+            {% if statement_type == 'brokerage' %}
+            <fieldset class="module aligned">
+                <h2>Deposits and Withdrawals</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="deposits" class="required">Deposits:</label>
+                        <input type="text" name="deposits" id="deposits" value="{{ parsed_data.deposits }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="withdrawals" class="required">Withdrawals:</label>
+                        <input type="text" name="withdrawals" id="withdrawals" value="{{ parsed_data.withdrawals }}" required>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="module aligned">
+                <h2>Income</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="dividends" class="required">Dividends:</label>
+                        <input type="text" name="dividends" id="dividends" value="{{ parsed_data.dividends }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="interest" class="required">Interest:</label>
+                        <input type="text" name="interest" id="interest" value="{{ parsed_data.interest }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="capital_gains" class="required">Capital Gains:</label>
+                        <input type="text" name="capital_gains" id="capital_gains" value="{{ parsed_data.capital_gains }}" required>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="module aligned">
+                <h2>Period Activity</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="market_change" class="required">Market Change:</label>
+                        <input type="text" name="market_change" id="market_change" value="{{ parsed_data.market_change }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="fees" class="required">Fees:</label>
+                        <input type="text" name="fees" id="fees" value="{{ parsed_data.fees }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="other_activity" class="required">Other Activity:</label>
+                        <input type="text" name="other_activity" id="other_activity" value="{{ parsed_data.other_activity }}" required>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="module aligned">
+                <h2>Account Allocation (Optional)</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="money_market">Money Market:</label>
+                        <input type="text" name="money_market" id="money_market" value="{{ parsed_data.money_market }}">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="equities">Equities:</label>
+                        <input type="text" name="equities" id="equities" value="{{ parsed_data.equities }}">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="fixed_income">Fixed Income:</label>
+                        <input type="text" name="fixed_income" id="fixed_income" value="{{ parsed_data.fixed_income }}">
+                    </div>
+                </div>
+            </fieldset>
+            {% elif statement_type == '401k' %}
+            <fieldset class="module aligned">
+                <h2>Contributions</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="employee_contributions" class="required">Employee Contributions:</label>
+                        <input type="text" name="employee_contributions" id="employee_contributions" value="{{ parsed_data.employee_contributions }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="employer_contributions" class="required">Employer Contributions:</label>
+                        <input type="text" name="employer_contributions" id="employer_contributions" value="{{ parsed_data.employer_contributions }}" required>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="module aligned">
+                <h2>Period Activity</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="investment_gain_loss" class="required">Investment Gain/Loss:</label>
+                        <input type="text" name="investment_gain_loss" id="investment_gain_loss" value="{{ parsed_data.investment_gain_loss }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="withdrawals" class="required">Withdrawals:</label>
+                        <input type="text" name="withdrawals" id="withdrawals" value="{{ parsed_data.withdrawals }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="fees" class="required">Fees:</label>
+                        <input type="text" name="fees" id="fees" value="{{ parsed_data.fees }}" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="loan_payments" class="required">Loan Payments:</label>
+                        <input type="text" name="loan_payments" id="loan_payments" value="{{ parsed_data.loan_payments }}" required>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="module aligned">
+                <h2>Vesting Information (Optional)</h2>
+                <div class="form-row">
+                    <div>
+                        <label for="vested_balance">Vested Balance:</label>
+                        <input type="text" name="vested_balance" id="vested_balance" value="{{ parsed_data.vested_balance }}">
+                    </div>
+                </div>
+            </fieldset>
+            {% else %}
             <fieldset class="module aligned">
                 <h2>Period Activity</h2>
                 <div class="form-row">
@@ -175,6 +372,7 @@
                     </div>
                 </div>
             </fieldset>
+            {% endif %}
 
             <div class="submit-row">
                 <input type="submit" name="confirm_import" value="Create Statement" class="default">
@@ -188,7 +386,13 @@
         <ul>
             <li>✓ Verify all dollar amounts match the PDF</li>
             <li>✓ Check that the statement date is correct</li>
+            {% if statement_type == '401k' %}
+            <li>✓ Ensure the correct 401k account is selected</li>
+            {% elif statement_type == 'brokerage' %}
+            <li>✓ Ensure the correct brokerage account is selected</li>
+            {% else %}
             <li>✓ Ensure the correct annuity is selected</li>
+            {% endif %}
             <li>✓ Review any warnings about reconciliation mismatches</li>
         </ul>
     </div>

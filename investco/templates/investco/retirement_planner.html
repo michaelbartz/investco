@@ -1,0 +1,184 @@
+{% extends 'investco/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ portfolio.name }} Retirement Planner - InvestCo{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'investco:home' %}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_list' %}">Portfolios</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'investco:portfolio_detail' portfolio.id %}">{{ portfolio.name }}</a></li>
+                <li class="breadcrumb-item active">Retirement Planner</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1><i class="fas fa-umbrella-beach"></i> {{ portfolio.name }} - Retirement Planner</h1>
+            <a href="/admin/investco/portfolio/{{ portfolio.id }}/change/" class="btn btn-outline-secondary">
+                <i class="fas fa-calendar"></i> Set Retirement Date
+            </a>
+        </div>
+    </div>
+</div>
+
+{% if not portfolio.retirement_date %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>No Retirement Date Set</strong> - Please set a target retirement date for this portfolio to calculate projections.
+            <a href="/admin/investco/portfolio/{{ portfolio.id }}/change/" class="alert-link">Set Date Now</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Retirement Date</h6>
+                <h3>{% if portfolio.retirement_date %}{{ portfolio.retirement_date|date:"M d, Y" }}{% else %}Not Set{% endif %}</h3>
+                {% if years_to_retirement %}
+                    <small class="text-muted">{{ years_to_retirement|floatformat:1 }} years</small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Current Value</h6>
+                <h3>${{ total_current_value|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">today</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Projected Value</h6>
+                <h3 class="gain-positive">${{ total_projected_value|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">at retirement</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h6 class="text-muted">Est. Annual Income</h6>
+                <h3>${{ total_annual_income|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">per year</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Projected Growth -->
+{% if years_to_retirement %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-body">
+                <h5><i class="fas fa-chart-line"></i> Projected Growth</h5>
+                <div class="row mt-3">
+                    <div class="col-md-4">
+                        <small class="text-muted">Total Projected Gain</small>
+                        <h4 class="gain-positive">${{ total_projected_gain|floatformat:2|intcomma }}</h4>
+                    </div>
+                    <div class="col-md-4">
+                        <small class="text-muted">Growth Percentage</small>
+                        <h4 class="gain-positive">
+                            {% widthratio total_projected_gain total_current_value 100 %}%
+                        </h4>
+                    </div>
+                    <div class="col-md-4">
+                        <small class="text-muted">Monthly Income</small>
+                        <h4>${{ total_monthly_income|floatformat:2|intcomma }}</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Investment Projections -->
+<div class="row">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-list"></i> Investment Projections</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Investment</th>
+                                <th class="text-end">Current Value</th>
+                                <th class="text-end">Projected Value</th>
+                                <th class="text-end">Projected Gain</th>
+                                <th class="text-end">Annual Income</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for proj in investment_projections %}
+                            <tr>
+                                <td>
+                                    <strong>{{ proj.investment.symbol|default:proj.investment.name }}</strong>
+                                    <br><small class="text-muted">{{ proj.investment.get_investment_type }}</small>
+                                    {% if not proj.has_plan %}
+                                        <br><span class="badge bg-warning">No Plan Set</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">${{ proj.current_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">${{ proj.projected_value|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <span class="{% if proj.projected_gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ proj.projected_gain|floatformat:2|intcomma }}
+                                    </span>
+                                </td>
+                                <td class="text-end">${{ proj.annual_income|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <a href="{% url 'investco:investment_retirement_plan' proj.investment.id %}"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-edit"></i> Plan
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Links -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="btn-group" role="group">
+            <a href="{% url 'investco:portfolio_performance' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-line"></i> Performance
+            </a>
+            <a href="{% url 'investco:asset_allocation_report' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-pie-chart"></i> Asset Allocation
+            </a>
+            <a href="{% url 'investco:portfolio_detail' portfolio.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-briefcase"></i> Portfolio Details
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

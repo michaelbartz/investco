@@ -19,6 +19,10 @@ class Portfolio(TimeStampMixin):
     name = models.CharField(max_length=100)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     description = models.TextField(blank=True)
+    retirement_date = models.DateField(
+        null=True, blank=True,
+        help_text="Target retirement date for planning purposes"
+    )
 
     def __str__(self):
         return f"{self.name} ({self.user.username})"
@@ -179,6 +183,10 @@ class Stock(ShareBasedInvestment):
     dividend_yield = models.DecimalField(max_digits=5, decimal_places=4, null=True, blank=True)
     exchange = models.CharField(max_length=50, blank=True)
 
+    class Meta:
+        verbose_name = "Stock"
+        verbose_name_plural = "Stocks"
+
     def save(self, *args, **kwargs):
         if not self.symbol:
             self.symbol = self.ticker_symbol
@@ -277,6 +285,10 @@ class Retirement401k(Investment):
     total_contributions = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Total cost basis")
     current_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Current total value")
 
+    class Meta:
+        verbose_name = "401(k) Retirement Account"
+        verbose_name_plural = "401(k) Retirement Accounts"
+
     @property
     def employer_match_value(self):
         """Calculate employer match based on contribution rate"""
@@ -286,11 +298,47 @@ class Retirement401k(Investment):
 
     @property
     def total_cost(self):
+        """Calculate total cost basis from contributions"""
+        from decimal import Decimal
+        from django.db.models import Sum
+
+        # Use the most recent statement if available
+        latest_statement = self.statements.order_by('-statement_date').first()
+        if latest_statement:
+            actual_stmt = latest_statement.get_real_instance()
+            if hasattr(actual_stmt, 'employee_contributions') and hasattr(actual_stmt, 'employer_contributions'):
+                # Sum all contributions from statements
+                statements = self.statements.all()
+                total = Decimal('0')
+                for stmt in statements:
+                    actual = stmt.get_real_instance()
+                    if hasattr(actual, 'employee_contributions'):
+                        total += actual.employee_contributions or Decimal('0')
+                    if hasattr(actual, 'employer_contributions'):
+                        total += actual.employer_contributions or Decimal('0')
+                return total
+
+        # Fallback to stored value
         return self.total_contributions
 
     @property
     def current_value(self):
-        return self.current_balance
+        """Get current value from the most recent statement's ending value
+
+        This is the authoritative value from the 401k provider. If no statements
+        exist, falls back to the manually entered current_balance field.
+        """
+        from decimal import Decimal
+
+        # Use the most recent statement's ending value as the authoritative current value
+        latest_statement = self.statements.order_by('-statement_date').first()
+        if latest_statement:
+            actual_stmt = latest_statement.get_real_instance()
+            if hasattr(actual_stmt, 'ending_value'):
+                return actual_stmt.ending_value
+
+        # Fallback to manually entered balance if no statements exist
+        return self.current_balance or Decimal('0')
 
 
 class Annuity(Investment):
@@ -523,6 +571,77 @@ class GuaranteedWithdrawalBalance(TimeStampMixin):
 
     def __str__(self):
         return f"{self.annuity.name} - ${self.balance} on {self.effective_date}"
+
+
+class BrokerageAccount(Investment):
+    """Brokerage/Investment account holdings"""
+    ACCOUNT_TYPES = [
+        ('INDIVIDUAL', 'Individual Taxable Account'),
+        ('JOINT', 'Joint Taxable Account'),
+        ('IRA_TRADITIONAL', 'Traditional IRA'),
+        ('IRA_ROTH', 'Roth IRA'),
+        ('SEP_IRA', 'SEP IRA'),
+        ('SIMPLE_IRA', 'SIMPLE IRA'),
+        ('ROLLOVER_IRA', 'Rollover IRA'),
+        ('CUSTODIAL', 'Custodial Account (UGMA/UTMA)'),
+        ('TRUST', 'Trust Account'),
+        ('MARGIN', 'Margin Account'),
+    ]
+
+    account_type = models.CharField(max_length=30, choices=ACCOUNT_TYPES)
+    brokerage_firm = models.CharField(max_length=200, help_text="Name of brokerage (e.g., Fidelity, Vanguard, Schwab)")
+    account_number = models.CharField(max_length=100, blank=True)
+    tax_advantaged = models.BooleanField(default=False, help_text="Is this a tax-advantaged account (IRA, 401k, etc.)?")
+    margin_enabled = models.BooleanField(default=False, help_text="Is margin trading enabled?")
+    cash_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Cash available in account")
+
+    # Value fields (brokerage account tracked via statements)
+    total_cost_basis = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Total amount invested")
+    current_market_value = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Current total value")
+
+    class Meta:
+        verbose_name = "Brokerage Account"
+        verbose_name_plural = "Brokerage Accounts"
+
+    @property
+    def total_cost(self):
+        """Calculate total cost basis from statements if available"""
+        from decimal import Decimal
+
+        # Use the most recent statement if available
+        latest_statement = self.statements.order_by('-statement_date').first()
+        if latest_statement:
+            actual_stmt = latest_statement.get_real_instance()
+            if hasattr(actual_stmt, 'total_cost_basis') and actual_stmt.total_cost_basis:
+                return actual_stmt.total_cost_basis
+
+        # Fallback to stored value
+        return self.total_cost_basis
+
+    @property
+    def current_value(self):
+        """Get current value from the most recent statement's ending value
+
+        This is the authoritative value from the brokerage. If no statements
+        exist, falls back to the manually entered current_market_value field.
+        """
+        from decimal import Decimal
+
+        # Use the most recent statement's ending value as the authoritative current value
+        latest_statement = self.statements.order_by('-statement_date').first()
+        if latest_statement:
+            actual_stmt = latest_statement.get_real_instance()
+            if hasattr(actual_stmt, 'ending_value'):
+                return actual_stmt.ending_value
+
+        # Fallback to manually entered value if no statements exist
+        return self.current_market_value or Decimal('0')
+
+    @property
+    def is_retirement_account(self):
+        """Check if this is a retirement account"""
+        retirement_types = ['IRA_TRADITIONAL', 'IRA_ROTH', 'SEP_IRA', 'SIMPLE_IRA', 'ROLLOVER_IRA']
+        return self.account_type in retirement_types
 
 
 class RealEstate(Investment):
@@ -798,6 +917,398 @@ class Statement(PolymorphicModel, TimeStampMixin):
         return self.__class__.__name__
 
 
+class Retirement401kStatement(Statement):
+    """Statement for 401k retirement accounts"""
+    # Account Values
+    beginning_value = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        help_text="Account balance at beginning of period"
+    )
+    ending_value = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        help_text="Account balance at end of period"
+    )
+
+    # Contributions
+    employee_contributions = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Employee contributions during period"
+    )
+    employer_contributions = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Employer contributions/match during period"
+    )
+
+    # Investment Activity
+    investment_gain_loss = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Investment gains or losses during period"
+    )
+
+    # Withdrawals and Fees
+    withdrawals = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Withdrawals during period"
+    )
+    fees = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Fees charged during period"
+    )
+    loan_payments = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Loan payments during period"
+    )
+
+    # Vesting Information
+    vested_balance = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Vested balance (amount you can take if you leave)"
+    )
+
+    def __str__(self):
+        return f"{self.investment.name} - 401k Statement {self.statement_date}"
+
+    @property
+    def total_contributions(self):
+        """Total contributions for the period"""
+        return self.employee_contributions + self.employer_contributions
+
+    @property
+    def calculated_change(self):
+        """Calculate what the change should be based on activity"""
+        if self.beginning_value is None or self.ending_value is None:
+            return None
+        return (self.beginning_value + self.employee_contributions +
+                self.employer_contributions + self.investment_gain_loss +
+                self.loan_payments - self.withdrawals - self.fees)
+
+    @property
+    def reconciles(self):
+        """Check if the statement reconciles (calculated change matches ending value)"""
+        if self.calculated_change is None or self.ending_value is None:
+            return None
+        return abs(self.calculated_change - self.ending_value) < Decimal('0.01')  # Within 1 cent
+
+    @property
+    def previous_statement(self):
+        """Get the previous statement by date"""
+        return self.investment.statements.filter(
+            statement_date__lt=self.statement_date
+        ).order_by('-statement_date').first()
+
+    @property
+    def chains_with_previous(self):
+        """Check if this statement's beginning value matches the previous statement's ending value"""
+        prev = self.previous_statement
+        if not prev:
+            # First statement - no previous to check against
+            return True
+
+        if not hasattr(prev, 'retirement401kstatement'):
+            return None
+
+        prev_stmt = prev.retirement401kstatement
+        if self.beginning_value is None or prev_stmt.ending_value is None:
+            return None
+
+        return abs(self.beginning_value - prev_stmt.ending_value) < Decimal('0.01')  # Within 1 cent
+
+    @property
+    def chain_gap(self):
+        """Calculate the gap between this statement and the previous one"""
+        prev = self.previous_statement
+        if not prev or not hasattr(prev, 'retirement401kstatement'):
+            return None
+
+        prev_stmt = prev.retirement401kstatement
+        if self.beginning_value is None or prev_stmt.ending_value is None:
+            return None
+
+        return self.beginning_value - prev_stmt.ending_value
+
+    def save(self, *args, **kwargs):
+        """Override save to automatically create/update transactions"""
+        # Check if this is an update (has pk) or new statement
+        is_new = self.pk is None
+
+        # Save the statement first
+        super().save(*args, **kwargs)
+
+        # Delete existing transactions from this statement if updating
+        if not is_new:
+            self.generated_transactions.all().delete()
+
+        # Create new transactions
+        self._create_transactions()
+
+    def _create_transactions(self):
+        """Internal method to create Transaction records from this statement"""
+        from django.utils import timezone
+
+        statement_date_aware = timezone.make_aware(
+            timezone.datetime.combine(self.statement_date, timezone.datetime.min.time())
+        )
+
+        # Create employee contribution transaction if applicable
+        if self.employee_contributions > 0:
+            Transaction.objects.create(
+                investment=self.investment,
+                transaction_type='PREMIUM',  # Using PREMIUM for contributions
+                amount=self.employee_contributions,
+                date=statement_date_aware,
+                notes=f'Employee contributions from statement {self.statement_date}',
+                source_statement=self
+            )
+
+        # Create employer contribution transaction if applicable
+        if self.employer_contributions > 0:
+            Transaction.objects.create(
+                investment=self.investment,
+                transaction_type='PREMIUM',  # Using PREMIUM for contributions
+                amount=self.employer_contributions,
+                date=statement_date_aware,
+                notes=f'Employer contributions from statement {self.statement_date}',
+                source_statement=self
+            )
+
+        # Create withdrawal transaction if applicable
+        if self.withdrawals > 0:
+            Transaction.objects.create(
+                investment=self.investment,
+                transaction_type='WITHDRAWAL',
+                amount=self.withdrawals,
+                date=statement_date_aware,
+                notes=f'From statement {self.statement_date}',
+                source_statement=self
+            )
+
+        # Create investment gain/loss transaction if applicable
+        if self.investment_gain_loss != 0:
+            Transaction.objects.create(
+                investment=self.investment,
+                transaction_type='NET_CHANGE',
+                amount=self.investment_gain_loss,
+                date=statement_date_aware,
+                notes=f'Investment gain/loss from statement {self.statement_date}',
+                source_statement=self
+            )
+
+    class Meta:
+        verbose_name = "401k Statement"
+        verbose_name_plural = "401k Statements"
+
+
+class BrokerageAccountStatement(Statement):
+    """Statement for Brokerage Account investments"""
+    # Account Values
+    beginning_value = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        help_text="Account value at beginning of period"
+    )
+    ending_value = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        help_text="Account value at end of period"
+    )
+
+    # Period Activity
+    deposits = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Cash deposits/contributions during period"
+    )
+    withdrawals = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Cash withdrawals/distributions during period"
+    )
+    dividends = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Dividends received during period"
+    )
+    interest = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Interest earned during period"
+    )
+    capital_gains = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Realized capital gains during period (can be negative for losses)"
+    )
+    fees = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Fees and expenses charged during period"
+    )
+    other_activity = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Other activity (transfers, corporate actions, etc.)"
+    )
+
+    # Market Change
+    market_change = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Unrealized gain/loss from market value changes"
+    )
+
+    # Optional: Cost Basis Tracking
+    total_cost_basis = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Total cost basis of holdings"
+    )
+
+    # Account Allocation Breakdown
+    money_market = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Amount allocated to money market funds"
+    )
+    equities = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Amount allocated to equities/stocks"
+    )
+    fixed_income = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Amount allocated to fixed income/bonds"
+    )
+
+    @property
+    def total_income(self):
+        """Calculate total income from dividends and interest"""
+        if self.dividends is None or self.interest is None:
+            return None
+        return self.dividends + self.interest
+
+    @property
+    def net_deposits(self):
+        """Calculate net deposits (deposits - withdrawals)"""
+        if self.deposits is None or self.withdrawals is None:
+            return None
+        return self.deposits - self.withdrawals
+
+    @property
+    def calculated_change(self):
+        """Calculate expected ending value based on activity"""
+        # Handle None values (e.g., when form is first displayed)
+        if any(field is None for field in [
+            self.beginning_value, self.deposits, self.withdrawals,
+            self.dividends, self.interest, self.capital_gains,
+            self.market_change, self.other_activity, self.fees
+        ]):
+            return None
+
+        return (
+            self.beginning_value +
+            self.deposits -
+            self.withdrawals +
+            self.dividends +
+            self.interest +
+            self.capital_gains +
+            self.market_change +
+            self.other_activity -
+            self.fees
+        )
+
+    @property
+    def reconciles(self):
+        """Check if statement reconciles (calculated matches ending value)"""
+        if self.calculated_change is None or self.ending_value is None:
+            return None
+        difference = abs(self.calculated_change - self.ending_value)
+        # Allow for small rounding differences (within 1 cent)
+        return difference < Decimal('0.01')
+
+    @property
+    def previous_statement(self):
+        """Get the previous statement chronologically"""
+        return self.investment.statements.filter(
+            statement_date__lt=self.statement_date
+        ).order_by('-statement_date').first()
+
+    @property
+    def chains_with_previous(self):
+        """Check if this statement's beginning matches previous statement's ending"""
+        prev = self.previous_statement
+        if not prev:
+            return None  # First statement, no previous to chain with
+
+        if not hasattr(prev, 'brokerageaccountstatement'):
+            return None  # Previous is not a brokerage statement
+
+        prev_stmt = prev.brokerageaccountstatement
+        difference = abs(self.beginning_value - prev_stmt.ending_value)
+        # Allow for small rounding differences (within 1 cent)
+        return difference < Decimal('0.01')
+
+    @property
+    def chain_gap(self):
+        """Calculate the gap between this beginning and previous ending"""
+        prev = self.previous_statement
+        if not prev or not hasattr(prev, 'brokerageaccountstatement'):
+            return None
+
+        prev_stmt = prev.brokerageaccountstatement
+        return self.beginning_value - prev_stmt.ending_value
+
+    def save(self, *args, **kwargs):
+        """Override save to auto-generate transactions for portfolio tracking"""
+        super().save(*args, **kwargs)
+
+        # Generate transactions for this statement
+        from decimal import Decimal
+
+        # Remove old transactions from this statement
+        self.generated_transactions.all().delete()
+
+        # Create transactions (using statement date as transaction date)
+        if self.deposits > 0:
+            Transaction.objects.create(
+                investment=self.investment,
+                transaction_type='PREMIUM',  # Reusing PREMIUM for deposits
+                amount=self.deposits,
+                date=timezone.make_aware(
+                    timezone.datetime.combine(self.statement_date, timezone.datetime.min.time())
+                ),
+                notes=f'Deposits from statement {self.statement_date}',
+                source_statement=self
+            )
+
+        if self.withdrawals > 0:
+            Transaction.objects.create(
+                investment=self.investment,
+                transaction_type='WITHDRAWAL',
+                amount=self.withdrawals,
+                date=timezone.make_aware(
+                    timezone.datetime.combine(self.statement_date, timezone.datetime.min.time())
+                ),
+                notes=f'Withdrawals from statement {self.statement_date}',
+                source_statement=self
+            )
+
+        # Combined market change + income + capital gains as net change
+        net_market_activity = (
+            self.market_change +
+            self.dividends +
+            self.interest +
+            self.capital_gains +
+            self.other_activity -
+            self.fees
+        )
+
+        if net_market_activity != 0:
+            Transaction.objects.create(
+                investment=self.investment,
+                transaction_type='NET_CHANGE',
+                amount=net_market_activity,
+                date=timezone.make_aware(
+                    timezone.datetime.combine(self.statement_date, timezone.datetime.min.time())
+                ),
+                notes=f'Net change from statement {self.statement_date} (market change + income + gains - fees)',
+                source_statement=self
+            )
+
+    class Meta:
+        verbose_name = "Brokerage Account Statement"
+        verbose_name_plural = "Brokerage Account Statements"
+
+    def __str__(self):
+        return f"{self.investment.name} - {self.statement_date}"
+
+
 class AnnuityStatement(Statement):
     """Statement for Annuity investments"""
     # Account Values
@@ -1032,3 +1543,148 @@ class PredictionModel(TimeStampMixin):
             models.Index(fields=['investment', 'prediction_date']),
             models.Index(fields=['model_type', 'created_at']),
         ]
+
+
+class RetirementPlan(TimeStampMixin):
+    """Retirement planning parameters for an investment"""
+    FREQUENCY_CHOICES = [
+        ('MONTHLY', 'Monthly'),
+        ('ANNUAL', 'Annual'),
+    ]
+
+    WITHDRAWAL_TYPE_CHOICES = [
+        ('PERCENTAGE', 'Percentage'),
+        ('FIXED_AMOUNT', 'Fixed Amount'),
+    ]
+
+    investment = models.OneToOneField(
+        Investment,
+        on_delete=models.CASCADE,
+        related_name='retirement_plan'
+    )
+
+    # Future Value Parameters (pre-retirement growth)
+    expected_return = models.DecimalField(
+        max_digits=5, decimal_places=2, default=7.0,
+        help_text="Expected annual return percentage (e.g., 7.00 for 7%)"
+    )
+    continued_investment_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Amount of continued contributions"
+    )
+    continued_investment_frequency = models.CharField(
+        max_length=10,
+        choices=FREQUENCY_CHOICES,
+        default='MONTHLY',
+        help_text="Frequency of continued contributions"
+    )
+    contribution_years = models.DecimalField(
+        max_digits=5, decimal_places=1, null=True, blank=True,
+        help_text="Number of years to continue contributions (leave blank to contribute until retirement)"
+    )
+
+    # Post-Retirement Income Parameters
+    withdrawal_type = models.CharField(
+        max_length=15,
+        choices=WITHDRAWAL_TYPE_CHOICES,
+        default='PERCENTAGE',
+        help_text="Type of withdrawal strategy"
+    )
+    withdrawal_percentage = models.DecimalField(
+        max_digits=5, decimal_places=2, default=4.0,
+        help_text="Annual withdrawal percentage (e.g., 4.00 for 4%)"
+    )
+    withdrawal_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Fixed annual withdrawal amount"
+    )
+
+    def __str__(self):
+        return f"Retirement Plan for {self.investment.name}"
+
+    def calculate_future_value(self, years):
+        """Calculate future value based on current value, expected return, and contributions"""
+        from decimal import Decimal
+
+        current_value = float(self.investment.current_value)
+        rate = float(self.expected_return) / 100
+        contribution = float(self.continued_investment_amount)
+
+        # Determine contribution period (may stop before retirement)
+        contribution_years = float(self.contribution_years) if self.contribution_years else years
+
+        # Adjust contribution frequency
+        if self.continued_investment_frequency == 'MONTHLY':
+            # Monthly contributions
+            periods_per_year = 12
+            rate_per_period = rate / periods_per_year
+            total_periods = int(years * periods_per_year)
+            contribution_periods = int(contribution_years * periods_per_year)
+
+            # Future value of current investment (grows for full period)
+            fv_current = current_value * ((1 + rate_per_period) ** total_periods)
+
+            # Future value of contributions (only during contribution period)
+            if rate_per_period > 0:
+                # Calculate FV of contributions at end of contribution period
+                fv_contributions_at_stop = contribution * (((1 + rate_per_period) ** contribution_periods - 1) / rate_per_period)
+                # Then grow that amount for remaining years (if any)
+                remaining_periods = total_periods - contribution_periods
+                fv_contributions = fv_contributions_at_stop * ((1 + rate_per_period) ** remaining_periods)
+            else:
+                fv_contributions = contribution * contribution_periods
+
+        else:  # ANNUAL
+            contribution_years_int = int(contribution_years)
+
+            # Future value of current investment (grows for full period)
+            fv_current = current_value * ((1 + rate) ** years)
+
+            # Future value of contributions (only during contribution period)
+            if rate > 0:
+                # Calculate FV of contributions at end of contribution period
+                fv_contributions_at_stop = contribution * (((1 + rate) ** contribution_years_int - 1) / rate)
+                # Then grow that amount for remaining years (if any)
+                remaining_years = years - contribution_years_int
+                fv_contributions = fv_contributions_at_stop * ((1 + rate) ** remaining_years)
+            else:
+                fv_contributions = contribution * contribution_years_int
+
+        return Decimal(str(fv_current + fv_contributions))
+
+    def calculate_annual_income(self, retirement_value=None):
+        """Calculate estimated annual income in retirement"""
+        from decimal import Decimal
+
+        # Use provided retirement value or current value
+        if retirement_value is None:
+            retirement_value = self.investment.current_value
+
+        # Ensure retirement_value is a Decimal
+        if not isinstance(retirement_value, Decimal):
+            retirement_value = Decimal(str(retirement_value))
+
+        # Check if this is an annuity with guaranteed withdrawal
+        actual_investment = self.investment.get_real_instance()
+
+        if actual_investment.__class__.__name__ == 'Annuity':
+            # Get the latest statement with GWB
+            latest_statement = self.investment.statements.filter(
+                annuitystatement__guaranteed_withdrawal_amount_annually__isnull=False
+            ).order_by('-statement_date').first()
+
+            if latest_statement and hasattr(latest_statement, 'annuitystatement'):
+                gwb = latest_statement.annuitystatement.guaranteed_withdrawal_amount_annually
+                if gwb:
+                    return gwb
+
+        # Otherwise calculate based on withdrawal strategy
+        if self.withdrawal_type == 'PERCENTAGE':
+            withdrawal_pct = Decimal(str(self.withdrawal_percentage))
+            return retirement_value * (withdrawal_pct / Decimal('100'))
+        else:  # FIXED_AMOUNT
+            return self.withdrawal_amount
+
+    class Meta:
+        verbose_name = "Retirement Plan"
+        verbose_name_plural = "Retirement Plans"

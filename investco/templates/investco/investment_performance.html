@@ -23,14 +23,33 @@
                 <h1><i class="fas fa-chart-line"></i> {{ investment.symbol|default:investment.name }} Performance</h1>
                 <p class="text-muted">{{ investment.get_investment_type }} - {{ investment.name }}</p>
             </div>
-            {% if is_annuity %}
+            {% if has_statements %}
             <div>
                 <a href="{% url 'investco:investment_statements' investment.id %}" class="btn btn-outline-primary me-2">
                     <i class="fas fa-file-invoice"></i> View Statements
                 </a>
+                {% if is_annuity %}
+                <a href="/admin/investco/annuitystatement/import-pdf/" class="btn btn-success me-2">
+                    <i class="fas fa-file-upload"></i> Import PDF
+                </a>
                 <a href="/admin/investco/annuitystatement/add/?investment={{ investment.id }}" class="btn btn-primary">
                     <i class="fas fa-plus"></i> Add Statement
                 </a>
+                {% elif is_401k %}
+                <a href="/admin/investco/retirement401kstatement/import-pdf/" class="btn btn-success me-2">
+                    <i class="fas fa-file-upload"></i> Import PDF
+                </a>
+                <a href="/admin/investco/retirement401kstatement/add/?investment={{ investment.id }}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Statement
+                </a>
+                {% elif is_brokerage %}
+                <a href="/admin/investco/brokerageaccountstatement/import-pdf/" class="btn btn-success me-2">
+                    <i class="fas fa-file-upload"></i> Import PDF
+                </a>
+                <a href="/admin/investco/brokerageaccountstatement/add/?investment={{ investment.id }}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Statement
+                </a>
+                {% endif %}
             </div>
             {% endif %}
         </div>
@@ -177,7 +196,7 @@
     <div class="col-12">
         <div class="card dashboard-card">
             <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="fas fa-chart-bar"></i> {{ days }}-Day Performance Metrics</h5>
+                <h5 class="mb-0"><i class="fas fa-chart-bar"></i> {% if days == 'all' %}All Time Performance Metrics{% else %}{{ days }}-Day Performance Metrics{% endif %}</h5>
             </div>
             <div class="card-body">
                 {% if is_annuity %}

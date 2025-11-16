@@ -19,4 +19,8 @@ urlpatterns = [
     # Statements
     path('investments/<int:investment_id>/statements/', views.investment_statements, name='investment_statements'),
     path('statements/<int:statement_id>/', views.statement_detail, name='statement_detail'),
+
+    # Retirement Planning
+    path('portfolios/<int:portfolio_id>/retirement-planner/', views.retirement_planner, name='retirement_planner'),
+    path('investments/<int:investment_id>/retirement-plan/', views.investment_retirement_plan, name='investment_retirement_plan'),
 ]

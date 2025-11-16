@@ -1,11 +1,13 @@
 """
-PDF Parser for Annuity Statements
+PDF Parser for Investment Statements
 
-Extracts key financial data from quarterly annuity statements.
+Extracts key financial data from investment statements.
 Supports multiple formats:
 - Jackson annuity statements
 - TIAA annuity statements
 - Valic/Corebridge Financial annuity statements
+- John Hancock 401k statements
+- M Holdings brokerage statements
 """
 
 import re
@@ -602,15 +604,755 @@ class ValicStatementParser:
         }
 
 
+class JohnHancock401kParser:
+    """Parser for John Hancock 401k quarterly statements."""
+
+    def __init__(self, pdf_path):
+        self.pdf_path = pdf_path
+        self.data = {}
+
+    def parse(self):
+        """
+        Parse the PDF and extract statement data.
+
+        Returns:
+            dict: Extracted statement data
+        """
+        text = None
+
+        # Try pdfplumber first - extract all pages, handling rotations
+        with pdfplumber.open(self.pdf_path) as pdf:
+            all_text = []
+            for page in pdf.pages:
+                # Try normal orientation first
+                page_text = page.extract_text()
+                if page_text:
+                    all_text.append(page_text)
+
+                # Also try extracting with different rotations for rotated sections
+                # John Hancock statements often have tables rotated 90 degrees
+                for angle in [90, 270]:
+                    try:
+                        rotated_page = page.rotate(angle)
+                        rotated_text = rotated_page.extract_text()
+                        if rotated_text and len(rotated_text.strip()) > 50:
+                            all_text.append(rotated_text)
+                    except:
+                        pass
+
+            text = '\n'.join(all_text)
+
+        # Try PyPDF2 if needed
+        if not text or len(text.strip()) < 100:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(self.pdf_path)
+            all_text = []
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    all_text.append(page_text)
+            text = '\n'.join(all_text)
+
+        # Try OCR if still insufficient
+        if not text or len(text.strip()) < 100:
+            text = self._extract_text_with_ocr()
+
+        if not text or len(text.strip()) < 100:
+            raise ValueError(
+                "Unable to extract text from PDF using any method. "
+                "Please check the PDF file or use manual entry."
+            )
+
+        # John Hancock PDFs sometimes have mixed normal and reversed text in tables
+        # Reverse lines that contain reversed keywords
+        if 'YRAMMUS' in text or 'TNEMTSEVNI' in text or 'DOIREP' in text:
+            lines = text.split('\n')
+            processed_lines = []
+            reversed_keywords = [
+                'YRAMMUS', 'TNEMTSEVNI', 'DOIREP', 'TNEMETATS', 'ecnalaB', 'eulaV', 'htworG',
+                'gninepO', 'gnisolC', 'dnuF', 'paC', 'lanoitanretnI', 'emocnI', 'snoitubirtnoC',
+                'tnapicitraP', 'stnemyaP', 'snoitpmedeR', 'tekraM', 'egnahC'
+            ]
+            # Also reverse lines that look like reversed currency (e.g., "77.824,151")
+            currency_pattern = re.compile(r'\d{2}\.\d{3},\d{2,3}')
+
+            for line in lines:
+                # If line contains reversed keywords or reversed currency pattern, reverse it
+                if any(keyword in line for keyword in reversed_keywords) or currency_pattern.search(line):
+                    processed_lines.append(line[::-1])
+                else:
+                    processed_lines.append(line)
+
+            text = '\n'.join(processed_lines)
+
+        # Parse John Hancock 401k statement sections
+        self._parse_account_info(text)
+        self._parse_period_dates(text)
+        self._parse_account_values(text)
+
+        return self.data
+
+    def _extract_text_with_ocr(self):
+        """Extract text from image-based PDF using OCR."""
+        try:
+            from pdf2image import convert_from_path
+            import pytesseract
+
+            images = convert_from_path(self.pdf_path, first_page=1, last_page=1)
+            if not images:
+                return ""
+
+            text = pytesseract.image_to_string(images[0])
+            return text
+
+        except Exception as e:
+            print(f"OCR extraction failed: {e}")
+            return ""
+
+    def _parse_period_dates(self, text):
+        """Extract statement period dates."""
+        # John Hancock format: "07/01/2025 - 09/30/2025" or "STATEMENT PERIOD: 07/01/2025 - 09/30/2025"
+        period_match = re.search(r'(\d{2}/\d{2}/\d{4})\s*-\s*(\d{2}/\d{2}/\d{4})', text)
+        if period_match:
+            start_str = period_match.group(1)
+            end_str = period_match.group(2)
+            self.data['period_start'] = datetime.strptime(start_str, '%m/%d/%Y').date()
+            self.data['period_end'] = datetime.strptime(end_str, '%m/%d/%Y').date()
+            self.data['statement_date'] = self.data['period_end']
+
+        # Alternative: Look for "AS OF MM/DD/YYYY"
+        if 'statement_date' not in self.data:
+            as_of_match = re.search(r'(?:AS\s+OF|as\s+of)[:\s]+(\d{2}/\d{2}/\d{4})', text, re.IGNORECASE)
+            if as_of_match:
+                date_str = as_of_match.group(1)
+                self.data['statement_date'] = datetime.strptime(date_str, '%m/%d/%Y').date()
+                self.data['period_end'] = self.data['statement_date']
+
+    def _parse_account_info(self, text):
+        """Extract account information from John Hancock statement."""
+        # Look for account number
+        account_match = re.search(r'Account\s+(?:Number|#)[:\s]*(\d+)', text, re.IGNORECASE)
+        if account_match:
+            self.data['account_number'] = account_match.group(1)
+
+        # Look for participant/policy number
+        participant_match = re.search(r'Participant\s+(?:Number|ID)[:\s]*(\d+)', text, re.IGNORECASE)
+        if participant_match:
+            self.data['participant_number'] = participant_match.group(1)
+
+    def _parse_account_values(self, text):
+        """Extract account values from John Hancock 401k statement."""
+        # John Hancock format: Amount may be on previous line(s) before "Opening Balance"
+        # Try multi-line pattern first: capture amount before "Opening" or "Balance Opening"
+        multiline_beginning_patterns = [
+            r'([\d,]+\.\d{2})\s*\$?\s*Balance\s+Opening',
+            r'([\d,]+\.\d{2})\s*\$?\s*Opening\s+Balance',
+        ]
+        for pattern in multiline_beginning_patterns:
+            beginning_match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if beginning_match:
+                self.data['beginning_value'] = self._parse_currency(beginning_match.group(1))
+                break
+
+        # Try single-line patterns if multi-line didn't work
+        if 'beginning_value' not in self.data:
+            beginning_patterns = [
+                r'Opening\s+Balance\s+\$?\s*([\d,]+\.\d{2})',
+                r'Balance\s+Opening\s+\$?\s*([\d,]+\.\d{2})',
+                r'Beginning\s+[Bb]alance\s+\$?\s*([\d,]+\.\d{2})'
+            ]
+            for pattern in beginning_patterns:
+                beginning_match = re.search(pattern, text, re.IGNORECASE)
+                if beginning_match:
+                    self.data['beginning_value'] = self._parse_currency(beginning_match.group(1))
+                    break
+
+        # John Hancock format: "Closing Balance" followed by amount or "$168,202.73 Balance Closing"
+        ending_patterns = [
+            r'Closing\s+Balance\s+\$?\s*([\d,]+\.\d{2})',
+            r'\$\s*([\d,]+\.\d{2})\s+Balance\s+Closing',
+            r'Balance\s+Closing\s+\$?\s*([\d,]+\.\d{2})',
+            r'Ending\s+[Bb]alance\s+\$?\s*([\d,]+\.\d{2})'
+        ]
+        for pattern in ending_patterns:
+            ending_match = re.search(pattern, text, re.IGNORECASE)
+            if ending_match:
+                self.data['ending_value'] = self._parse_currency(ending_match.group(1))
+                break
+
+        # John Hancock format: "Participant Contributions" or "Employee Pre-Tax Contribution" in table
+        # Look for total in the activity table (usually on page 2)
+        employee_patterns = [
+            # Table format: "Employee Pre-Tax Contribution" followed by amounts, we want the last (total)
+            r'Employee\s+Pre-Tax\s+Contribution\s+(?:[\d,]+\.\d{2}\s+){0,10}([\d,]+\.\d{2})',
+            r'Participant\s+Contributions?\s+\$?\s*([\d,]+\.\d{2})',
+            r'Contributions?\s+Participant\s+\$?\s*([\d,]+\.\d{2})',
+            r'Employee\s+[Cc]ontributions?\s+\$?\s*([\d,]+\.\d{2})',
+            r'Pre-Tax\s+Contribution\s+\$?\s*([\d,]+\.\d{2})'
+        ]
+        for pattern in employee_patterns:
+            employee_matches = re.findall(pattern, text, re.IGNORECASE)
+            if employee_matches:
+                # Take the last match (usually the total)
+                self.data['employee_contributions'] = self._parse_currency(employee_matches[-1])
+                break
+        if 'employee_contributions' not in self.data:
+            self.data['employee_contributions'] = Decimal('0')
+
+        # Employer contributions - John Hancock may not show this separately in profit sharing plans
+        employer_patterns = [
+            r'Employer\s+[Cc]ontributions?\s+\$?\s*([\d,]+\.\d{2})',
+            r'Company\s+[Cc]ontributions?\s+\$?\s*([\d,]+\.\d{2})',
+            r'Matching\s+[Cc]ontributions?\s+\$?\s*([\d,]+\.\d{2})'
+        ]
+        for pattern in employer_patterns:
+            employer_match = re.search(pattern, text, re.IGNORECASE)
+            if employer_match:
+                self.data['employer_contributions'] = self._parse_currency(employer_match.group(1))
+                break
+        if 'employer_contributions' not in self.data:
+            self.data['employer_contributions'] = Decimal('0')
+
+        # John Hancock format: "Gain/Loss" in activity table - look for total (last value)
+        # Need to capture negative values with minus sign
+        gainloss_patterns = [
+            # Table format: "Gain/Loss" followed by multiple amounts, we want the last (total)
+            # Capture both positive and negative (with minus sign)
+            r'Gain/Loss\s+(?:[\d,\-\.]+\s+){0,10}(-?[\d,]+\.\d{2})',
+            r'Change\s+in\s+Market\s+Value\s+\$?\s*(-?[\d,]+\.\d{2})',
+            r'Market\s+Value\s+in\s+Change\s+\$?\s*(-?[\d,]+\.\d{2})',
+            r'Investment\s+[Gg]ain(?:/[Ll]oss)?\s+\$?\s*(-?[\d,]+\.\d{2})'
+        ]
+        for pattern in gainloss_patterns:
+            gain_matches = re.findall(pattern, text, re.IGNORECASE)
+            if gain_matches:
+                # Take the last match (usually the total)
+                value_str = gain_matches[-1]
+                # Handle negative values (starts with minus sign)
+                if value_str.startswith('-'):
+                    self.data['investment_gain_loss'] = -self._parse_currency(value_str[1:])
+                else:
+                    self.data['investment_gain_loss'] = self._parse_currency(value_str)
+                break
+
+        # Check for negative gain/loss (with parentheses)
+        if 'investment_gain_loss' not in self.data:
+            for pattern in gainloss_patterns:
+                # Remove the -? prefix and wrap in parentheses
+                negative_pattern = pattern.replace(r'(-?[\d,]+\.\d{2})', r'\(([\d,]+\.\d{2})\)')
+                loss_matches = re.findall(negative_pattern, text, re.IGNORECASE)
+                if loss_matches:
+                    self.data['investment_gain_loss'] = -self._parse_currency(loss_matches[-1])
+                    break
+
+        if 'investment_gain_loss' not in self.data:
+            self.data['investment_gain_loss'] = Decimal('0')
+
+        # John Hancock includes dividends/interest separately in the table - add to investment gain/loss
+        dividend_patterns = [
+            r'Dividends?/Interest\s+(?:[\d,\-\.]+\s+){0,10}([\d,]+\.\d{2})'
+        ]
+        for pattern in dividend_patterns:
+            dividend_matches = re.findall(pattern, text, re.IGNORECASE)
+            if dividend_matches:
+                dividends = self._parse_currency(dividend_matches[-1])
+                self.data['investment_gain_loss'] = self.data['investment_gain_loss'] + dividends
+                break
+
+        # John Hancock format: "Redemptions & Payments" (can be negative)
+        withdrawal_patterns = [
+            r'Redemptions?\s+&\s+Payments?\s+\$?\s*([\d,]+\.\d{2})',
+            r'Payments?\s+&\s+Redemptions?\s+\$?\s*([\d,]+\.\d{2})',
+            r'Withdrawals?\s+\$?\s*([\d,]+\.\d{2})',
+            r'Distributions?\s+\$?\s*([\d,]+\.\d{2})'
+        ]
+
+        # First check for negative values with minus sign
+        for pattern in withdrawal_patterns:
+            negative_pattern = pattern.replace(r'\$?\s*([\d,]+\.\d{2})', r'-\$?\s*([\d,]+\.\d{2})')
+            withdrawal_match = re.search(negative_pattern, text, re.IGNORECASE)
+            if withdrawal_match:
+                # Value is already negative in text, so take absolute value
+                self.data['withdrawals'] = self._parse_currency(withdrawal_match.group(1))
+                break
+
+        # If not found as negative, try regular pattern
+        if 'withdrawals' not in self.data:
+            for pattern in withdrawal_patterns:
+                withdrawal_match = re.search(pattern, text, re.IGNORECASE)
+                if withdrawal_match:
+                    self.data['withdrawals'] = self._parse_currency(withdrawal_match.group(1))
+                    break
+
+        if 'withdrawals' not in self.data:
+            self.data['withdrawals'] = Decimal('0')
+
+        # John Hancock format: "Administrative Fee" in table (often negative)
+        fee_patterns = [
+            # Table format: "Administrative Fee" followed by amounts (may have negatives with -)
+            r'Administrative\s+Fee\s+(?:[\d,\-\.]+\s+){0,10}-?([\d,]+\.\d{2})',
+            r'Fee\s+Administrative\s+-?\$?\s*([\d,]+\.\d{2})',
+            r'Fees?\s+-?\$?\s*([\d,]+\.\d{2})'
+        ]
+
+        for pattern in fee_patterns:
+            fee_matches = re.findall(pattern, text, re.IGNORECASE)
+            if fee_matches:
+                # Take the last match (usually the total), and take absolute value
+                self.data['fees'] = abs(self._parse_currency(fee_matches[-1]))
+                break
+
+        if 'fees' not in self.data:
+            self.data['fees'] = Decimal('0')
+
+        # Loan payments
+        loan_patterns = [
+            r'Loan\s+[Pp]ayments?\s+\$\s*([\d,]+\.\d{2})',
+            r'Loan\s+[Rr]epayments?\s+\$\s*([\d,]+\.\d{2})'
+        ]
+        for pattern in loan_patterns:
+            loan_match = re.search(pattern, text, re.IGNORECASE)
+            if loan_match:
+                self.data['loan_payments'] = self._parse_currency(loan_match.group(1))
+                break
+        if 'loan_payments' not in self.data:
+            self.data['loan_payments'] = Decimal('0')
+
+        # Vested balance
+        vested_patterns = [
+            r'Vested\s+[Bb]alance\s+\$\s*([\d,]+\.\d{2})',
+            r'Total\s+[Vv]ested\s+\$\s*([\d,]+\.\d{2})'
+        ]
+        for pattern in vested_patterns:
+            vested_match = re.search(pattern, text, re.IGNORECASE)
+            if vested_match:
+                self.data['vested_balance'] = self._parse_currency(vested_match.group(1))
+                break
+
+    def _parse_currency(self, value_str):
+        """Convert currency string to Decimal."""
+        cleaned = value_str.replace('$', '').replace(',', '')
+        return Decimal(cleaned)
+
+    def validate(self):
+        """Validate parsed data and return any errors or warnings."""
+        errors = []
+        warnings = []
+
+        # Check required fields
+        required_fields = [
+            'statement_date', 'period_start', 'period_end',
+            'beginning_value', 'ending_value',
+            'employee_contributions', 'employer_contributions',
+            'investment_gain_loss', 'withdrawals', 'fees', 'loan_payments'
+        ]
+
+        for field in required_fields:
+            if field not in self.data:
+                errors.append(f"Missing required field: {field}")
+
+        # Validate reconciliation if all fields present
+        if not errors:
+            expected_ending = (
+                self.data['beginning_value'] +
+                self.data['employee_contributions'] +
+                self.data['employer_contributions'] +
+                self.data['investment_gain_loss'] +
+                self.data['loan_payments'] -
+                self.data['withdrawals'] -
+                self.data['fees']
+            )
+
+            difference = abs(self.data['ending_value'] - expected_ending)
+
+            # Allow for small rounding differences (up to $1)
+            if difference > Decimal('1.00'):
+                warnings.append(
+                    f"Reconciliation mismatch: Expected ending ${expected_ending}, "
+                    f"but PDF shows ${self.data['ending_value']} "
+                    f"(difference: ${difference})"
+                )
+
+        return {
+            'errors': errors,
+            'warnings': warnings
+        }
+
+
+class MHoldingsBrokerageParser:
+    """Parser for M Holdings Securities brokerage statements."""
+
+    def __init__(self, pdf_path):
+        self.pdf_path = pdf_path
+        self.data = {}
+
+    def parse(self):
+        """
+        Parse the PDF and extract statement data.
+
+        Returns:
+            dict: Extracted statement data
+        """
+        text = None
+
+        # Try pdfplumber first - extract all pages
+        with pdfplumber.open(self.pdf_path) as pdf:
+            all_text = []
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    all_text.append(page_text)
+            text = '\n'.join(all_text)
+
+        # Try PyPDF2 if needed
+        if not text or len(text.strip()) < 100:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(self.pdf_path)
+            all_text = []
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    all_text.append(page_text)
+            text = '\n'.join(all_text)
+
+        # Try OCR if still insufficient
+        if not text or len(text.strip()) < 100:
+            text = self._extract_text_with_ocr()
+
+        if not text or len(text.strip()) < 100:
+            raise ValueError(
+                "Unable to extract text from PDF using any method. "
+                "Please check the PDF file or use manual entry."
+            )
+
+        # Parse M Holdings brokerage statement sections
+        self._parse_account_info(text)
+        self._parse_period_dates(text)
+        self._parse_account_overview(text)
+        self._parse_account_allocation(text)
+
+        return self.data
+
+    def _extract_text_with_ocr(self):
+        """Extract text from image-based PDF using OCR."""
+        try:
+            from pdf2image import convert_from_path
+            import pytesseract
+
+            images = convert_from_path(self.pdf_path, first_page=1, last_page=2)
+            if not images:
+                return ""
+
+            text = ""
+            for image in images:
+                text += pytesseract.image_to_string(image) + "\n"
+            return text
+
+        except Exception as e:
+            print(f"OCR extraction failed: {e}")
+            return ""
+
+    def _parse_period_dates(self, text):
+        """Extract statement period dates."""
+        # M Holdings format: "STATEMENT FOR THE PERIOD SEPTEMBER 1, 2025 TO SEPTEMBER 30, 2025"
+        # or "Statement for the Period September 1, 2025 to September 30, 2025"
+        period_match = re.search(
+            r'(?:STATEMENT\s+FOR\s+THE\s+PERIOD|Statement\s+for\s+the\s+Period)\s+(\w+\s+\d{1,2},\s+\d{4})\s+(?:TO|to)\s+(\w+\s+\d{1,2},\s+\d{4})',
+            text,
+            re.IGNORECASE
+        )
+        if period_match:
+            start_str = period_match.group(1)
+            end_str = period_match.group(2)
+            try:
+                self.data['period_start'] = datetime.strptime(start_str, '%B %d, %Y').date()
+                self.data['period_end'] = datetime.strptime(end_str, '%B %d, %Y').date()
+                self.data['statement_date'] = self.data['period_end']
+            except ValueError:
+                pass
+
+        # Alternative: Look for "AS OF MM/DD/YY" format in ending value line
+        if 'statement_date' not in self.data:
+            as_of_match = re.search(r'ENDING\s+VALUE\s+\(AS\s+OF\s+(\d{2}/\d{2}/\d{2})\)', text, re.IGNORECASE)
+            if as_of_match:
+                date_str = as_of_match.group(1)
+                try:
+                    self.data['statement_date'] = datetime.strptime(date_str, '%m/%d/%y').date()
+                    self.data['period_end'] = self.data['statement_date']
+                except ValueError:
+                    pass
+
+    def _parse_account_info(self, text):
+        """Extract account information from M Holdings statement."""
+        # Look for account number
+        account_match = re.search(r'Account\s+(?:Number|#)[:\s]*([A-Z0-9\-]+)', text, re.IGNORECASE)
+        if account_match:
+            self.data['account_number'] = account_match.group(1)
+
+    def _parse_account_overview(self, text):
+        """Extract account values from Account Overview section."""
+        # M Holdings format has "Account Overview" section with table format:
+        # CHANGE IN ACCOUNT VALUE    Current Period    Year-to-Date
+        # BEGINNING VALUE            $0.00             $0.00
+        # Additions and Withdrawals  $54,232.62        $54,232.62
+        # ...
+
+        # Look for the Account Overview section on page 2
+        # It starts with "Account Overview" and ends before "INCOME Account Allocation"
+        overview_match = re.search(r'Account\s+Overview.*?(?=INCOME\s+Account\s+Allocation)', text, re.IGNORECASE | re.DOTALL)
+        if overview_match:
+            overview_text = overview_match.group(0)
+        else:
+            # Fallback: just use all text
+            overview_text = text
+
+        # Beginning Value - matches "BEGINNING VALUE $0.00 $0.00" and takes first value (Current Period)
+        beginning_match = re.search(r'BEGINNING\s+VALUE\s+\$\s*([\d,]+\.\d{2})', overview_text, re.IGNORECASE)
+        if beginning_match:
+            self.data['beginning_value'] = self._parse_currency(beginning_match.group(1))
+        else:
+            self.data['beginning_value'] = Decimal('0')
+
+        # Ending Value - matches "ENDING VALUE (AS OF 09/30/25) $213,513.74 $213,513.74"
+        ending_match = re.search(r'ENDING\s+VALUE\s+\(AS\s+OF\s+[^)]+\)\s+\$\s*([\d,]+\.\d{2})', overview_text, re.IGNORECASE)
+        if ending_match:
+            self.data['ending_value'] = self._parse_currency(ending_match.group(1))
+        elif not ending_match:
+            # Try without the date part
+            ending_match = re.search(r'ENDING\s+VALUE\s+\$\s*([\d,]+\.\d{2})', overview_text, re.IGNORECASE)
+            if ending_match:
+                self.data['ending_value'] = self._parse_currency(ending_match.group(1))
+
+        # Deposits - "Additions and Withdrawals $54,232.62 $54,232.62"
+        # or "Additions and Withdrawals ($1,000.00)" for net withdrawals
+        # This line actually shows NET additions/withdrawals, so we need to be careful
+        additions_match = re.search(r'Additions\s+and\s+Withdrawals\s+\$\s*([\d,]+\.\d{2})', overview_text, re.IGNORECASE)
+        if additions_match:
+            # This is net additions (deposits - withdrawals)
+            net_additions = self._parse_currency(additions_match.group(1))
+            # Positive value = net deposits
+            self.data['deposits'] = net_additions
+            self.data['withdrawals'] = Decimal('0')
+        else:
+            # Try parentheses format for negative values (net withdrawals)
+            additions_match = re.search(r'Additions\s+and\s+Withdrawals\s+\(\$\s*([\d,]+\.\d{2})\)', overview_text, re.IGNORECASE)
+            if additions_match:
+                # Parentheses indicate net withdrawals
+                net_withdrawals = self._parse_currency(additions_match.group(1))
+                self.data['deposits'] = Decimal('0')
+                self.data['withdrawals'] = net_withdrawals
+            else:
+                self.data['deposits'] = Decimal('0')
+                self.data['withdrawals'] = Decimal('0')
+
+        # Income - "Income $247.20 $247.20"
+        income_match = re.search(r'Income\s+\$\s*([\d,]+\.\d{2})', overview_text, re.IGNORECASE)
+        if income_match:
+            income_value = self._parse_currency(income_match.group(1))
+            # M Holdings shows total income, we'll look for breakdown in INCOME section
+            self.data['total_income'] = income_value
+        else:
+            income_value = Decimal('0')
+
+        # Look for breakdown in INCOME section - "Taxable Dividends $247.20 $247.20"
+        income_section_match = re.search(r'INCOME.*?(?=MESSAGES|Account\s+Allocation|$)', text, re.IGNORECASE | re.DOTALL)
+        if income_section_match:
+            income_section = income_section_match.group(0)
+
+            # Taxable Dividends
+            dividend_match = re.search(r'Taxable\s+Dividends\s+\$\s*([\d,]+\.\d{2})', income_section, re.IGNORECASE)
+            if dividend_match:
+                self.data['dividends'] = self._parse_currency(dividend_match.group(1))
+            else:
+                self.data['dividends'] = Decimal('0')
+
+            # Interest (if shown separately)
+            interest_match = re.search(r'Interest\s+\$\s*([\d,]+\.\d{2})', income_section, re.IGNORECASE)
+            if interest_match:
+                self.data['interest'] = self._parse_currency(interest_match.group(1))
+            else:
+                self.data['interest'] = Decimal('0')
+
+            # If no breakdown, put all income in dividends
+            if self.data['dividends'] == Decimal('0') and self.data['interest'] == Decimal('0') and income_value > 0:
+                self.data['dividends'] = income_value
+        else:
+            # Default: put all income in dividends
+            self.data['dividends'] = income_value
+            self.data['interest'] = Decimal('0')
+
+        # Change in Value - "Change in Value $159,033.92 $159,033.92"
+        # or "Change in Value ($5,000.00)" for losses
+        change_match = re.search(r'Change\s+in\s+Value\s+\$\s*(-?[\d,]+\.\d{2})', overview_text, re.IGNORECASE)
+        if change_match:
+            value_str = change_match.group(1)
+            if value_str.startswith('-'):
+                self.data['market_change'] = -self._parse_currency(value_str[1:])
+            else:
+                self.data['market_change'] = self._parse_currency(value_str)
+        else:
+            # Try parentheses format for negative values
+            change_match = re.search(r'Change\s+in\s+Value\s+\(\$\s*([\d,]+\.\d{2})\)', overview_text, re.IGNORECASE)
+            if change_match:
+                self.data['market_change'] = -self._parse_currency(change_match.group(1))
+            else:
+                self.data['market_change'] = Decimal('0')
+
+        # Taxes, Fees and Expenses - "Taxes,Fees and Expenses $0.00 $0.00"
+        # or "Taxes, Fees and Expenses ($530.51)" for negative values
+        fee_match = re.search(r'Taxes,\s*Fees\s+and\s+Expenses\s+\$\s*([\d,]+\.\d{2})', overview_text, re.IGNORECASE)
+        if fee_match:
+            self.data['fees'] = self._parse_currency(fee_match.group(1))
+        else:
+            # Try parentheses format for negative values
+            fee_match = re.search(r'Taxes,\s*Fees\s+and\s+Expenses\s+\(\$\s*([\d,]+\.\d{2})\)', overview_text, re.IGNORECASE)
+            if fee_match:
+                # Parentheses indicate negative, but fees are always stored as positive
+                self.data['fees'] = self._parse_currency(fee_match.group(1))
+            else:
+                self.data['fees'] = Decimal('0')
+
+        # Misc. & Corporate Actions - could include capital gains
+        # Can be positive or negative, with parentheses for negative
+        misc_match = re.search(r'Misc\.\s+&\s+Corporate\s+Actions\s+\$\s*(-?[\d,]+\.\d{2})', overview_text, re.IGNORECASE)
+        if misc_match:
+            value_str = misc_match.group(1)
+            if value_str.startswith('-'):
+                self.data['other_activity'] = -self._parse_currency(value_str[1:])
+            else:
+                self.data['other_activity'] = self._parse_currency(value_str)
+        else:
+            # Try parentheses format for negative values
+            misc_match = re.search(r'Misc\.\s+&\s+Corporate\s+Actions\s+\(\$\s*([\d,]+\.\d{2})\)', overview_text, re.IGNORECASE)
+            if misc_match:
+                self.data['other_activity'] = -self._parse_currency(misc_match.group(1))
+            else:
+                self.data['other_activity'] = Decimal('0')
+
+        # Capital gains - typically not shown separately in M Holdings
+        self.data['capital_gains'] = Decimal('0')
+
+    def _parse_account_allocation(self, text):
+        """Extract account allocation breakdown from M Holdings statement."""
+        # M Holdings format has an "Account Allocation" section with percentages:
+        # Fixed Income 3.2%
+        # Money Markets 25.5%
+        # Equities 71.3%
+
+        # Look for Account Allocation section
+        allocation_section_match = re.search(
+            r'ACCOUNT\s+ALLOCATION.*?(?=MESSAGES|Refer to|$)',
+            text,
+            re.IGNORECASE | re.DOTALL
+        )
+
+        if allocation_section_match:
+            allocation_text = allocation_section_match.group(0)
+
+            # Get ending value for calculating dollar amounts
+            ending_value = self.data.get('ending_value', Decimal('0'))
+
+            # Money Market (might be "Money Market" or "Money Markets")
+            money_market_match = re.search(
+                r'Money\s+Markets?\s+([\d.]+)%',
+                allocation_text,
+                re.IGNORECASE
+            )
+            if money_market_match and ending_value > 0:
+                percentage = Decimal(money_market_match.group(1))
+                self.data['money_market'] = (ending_value * percentage / Decimal('100')).quantize(Decimal('0.01'))
+            else:
+                self.data['money_market'] = None
+
+            # Equities (might be labeled as "Stocks" or "Equity")
+            equities_match = re.search(
+                r'(?:Equities|Equity|Stocks)\s+([\d.]+)%',
+                allocation_text,
+                re.IGNORECASE
+            )
+            if equities_match and ending_value > 0:
+                percentage = Decimal(equities_match.group(1))
+                self.data['equities'] = (ending_value * percentage / Decimal('100')).quantize(Decimal('0.01'))
+            else:
+                self.data['equities'] = None
+
+            # Fixed Income (might be labeled as "Bonds")
+            fixed_income_match = re.search(
+                r'(?:Fixed\s+Income|Bonds)\s+([\d.]+)%',
+                allocation_text,
+                re.IGNORECASE
+            )
+            if fixed_income_match and ending_value > 0:
+                percentage = Decimal(fixed_income_match.group(1))
+                self.data['fixed_income'] = (ending_value * percentage / Decimal('100')).quantize(Decimal('0.01'))
+            else:
+                self.data['fixed_income'] = None
+        else:
+            # If no allocation section found, set all to None
+            self.data['money_market'] = None
+            self.data['equities'] = None
+            self.data['fixed_income'] = None
+
+    def _parse_currency(self, value_str):
+        """Convert currency string to Decimal."""
+        cleaned = value_str.replace('$', '').replace(',', '')
+        return Decimal(cleaned)
+
+    def validate(self):
+        """Validate parsed data and return any errors or warnings."""
+        errors = []
+        warnings = []
+
+        # Check required fields
+        required_fields = [
+            'statement_date', 'beginning_value', 'ending_value',
+            'deposits', 'withdrawals', 'dividends', 'interest',
+            'market_change', 'fees'
+        ]
+
+        for field in required_fields:
+            if field not in self.data:
+                errors.append(f"Missing required field: {field}")
+
+        # Validate reconciliation if all fields present
+        if not errors:
+            expected_ending = (
+                self.data['beginning_value'] +
+                self.data['deposits'] -
+                self.data['withdrawals'] +
+                self.data['dividends'] +
+                self.data['interest'] +
+                self.data['capital_gains'] +
+                self.data['market_change'] +
+                self.data.get('other_activity', Decimal('0')) -
+                self.data['fees']
+            )
+
+            difference = abs(self.data['ending_value'] - expected_ending)
+
+            # Allow for small rounding differences (up to $1)
+            if difference > Decimal('1.00'):
+                warnings.append(
+                    f"Reconciliation mismatch: Expected ending ${expected_ending}, "
+                    f"but PDF shows ${self.data['ending_value']} "
+                    f"(difference: ${difference})"
+                )
+
+        return {
+            'errors': errors,
+            'warnings': warnings
+        }
+
+
 def _detect_statement_type(pdf_path):
     """
-    Detect which type of annuity statement this is.
+    Detect which type of investment statement this is.
 
     Args:
         pdf_path: Path to the PDF file
 
     Returns:
-        str: 'jackson', 'tiaa', 'valic', or 'unknown'
+        str: 'jackson', 'tiaa', 'valic', 'johnhancock401k', 'mholdings', or 'unknown'
     """
     try:
         # Extract text from first page using ALL methods for best detection
@@ -646,7 +1388,21 @@ def _detect_statement_type(pdf_path):
         if not text or len(text.strip()) < 50:
             return 'unknown'
 
-        # Check for Valic/Corebridge indicators (check first as they're more specific)
+        # Check for M Holdings brokerage indicators
+        if re.search(r'M\s+Holdings', text, re.IGNORECASE) or re.search(r'M\s+Financial\s+Holdings', text, re.IGNORECASE):
+            return 'mholdings'
+
+        # Check for John Hancock 401k/Profit Sharing indicators
+        # John Hancock PDFs sometimes have mixed normal/reversed text
+        if (re.search(r'John\s+Hancock', text, re.IGNORECASE) or re.search(r'johnhancock\.com', text, re.IGNORECASE)) and (
+            re.search(r'401\(?k\)?', text, re.IGNORECASE) or
+            re.search(r'Retirement\s+Plan', text, re.IGNORECASE) or
+            re.search(r'Profit\s+Sharing\s+Plan', text, re.IGNORECASE) or
+            (re.search(r'Participant', text, re.IGNORECASE) and re.search(r'Contributions?', text, re.IGNORECASE))
+        ):
+            return 'johnhancock401k'
+
+        # Check for Valic/Corebridge indicators
         if re.search(r'Corebridge', text, re.IGNORECASE) or re.search(r'VALIC', text, re.IGNORECASE):
             return 'valic'
 
@@ -665,9 +1421,9 @@ def _detect_statement_type(pdf_path):
         return 'unknown'
 
 
-def parse_annuity_statement(pdf_path):
+def parse_statement(pdf_path):
     """
-    Convenience function to parse an annuity statement PDF.
+    Convenience function to parse an investment statement PDF.
     Auto-detects statement type and uses appropriate parser.
 
     Args:
@@ -680,7 +1436,11 @@ def parse_annuity_statement(pdf_path):
     statement_type = _detect_statement_type(pdf_path)
 
     # Use appropriate parser
-    if statement_type == 'valic':
+    if statement_type == 'mholdings':
+        parser = MHoldingsBrokerageParser(pdf_path)
+    elif statement_type == 'johnhancock401k':
+        parser = JohnHancock401kParser(pdf_path)
+    elif statement_type == 'valic':
         parser = ValicStatementParser(pdf_path)
     elif statement_type == 'tiaa':
         parser = TIAAStatementParser(pdf_path)
@@ -694,3 +1454,19 @@ def parse_annuity_statement(pdf_path):
     validation = parser.validate()
 
     return data, validation
+
+
+def parse_annuity_statement(pdf_path):
+    """
+    Convenience function to parse an annuity statement PDF.
+    Auto-detects statement type and uses appropriate parser.
+
+    Deprecated: Use parse_statement() instead for broader support.
+
+    Args:
+        pdf_path: Path to the PDF file
+
+    Returns:
+        tuple: (data_dict, validation_dict)
+    """
+    return parse_statement(pdf_path)
