@@ -1688,3 +1688,247 @@ class RetirementPlan(TimeStampMixin):
     class Meta:
         verbose_name = "Retirement Plan"
         verbose_name_plural = "Retirement Plans"
+
+
+class SocialSecurityBenefit(TimeStampMixin):
+    """Social Security benefit information for retirement planning"""
+    portfolio = models.ForeignKey(
+        Portfolio,
+        on_delete=models.CASCADE,
+        related_name='social_security_benefits'
+    )
+    
+    # Beneficiary Information
+    beneficiary_name = models.CharField(
+        max_length=200,
+        help_text="Name of the Social Security beneficiary"
+    )
+    
+    # Benefit Amounts
+    estimated_monthly_benefit = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        help_text="Estimated monthly benefit at full retirement age"
+    )
+    
+    # Age Information
+    birth_date = models.DateField(
+        null=True, blank=True,
+        help_text="Birth date for calculating retirement age"
+    )
+    full_retirement_age = models.DecimalField(
+        max_digits=4, decimal_places=1, default=67.0,
+        help_text="Full retirement age (e.g., 67.0, 66.5)"
+    )
+    planned_start_age = models.DecimalField(
+        max_digits=4, decimal_places=1, default=67.0,
+        help_text="Age when you plan to start taking benefits"
+    )
+    
+    # Early/Delayed Benefit Adjustments
+    # If starting before FRA, benefits are reduced
+    # If starting after FRA, benefits are increased
+    early_reduction_percentage = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0.0,
+        help_text="Annual reduction percentage for early claiming (e.g., 6.67 for ~6.67%/year)"
+    )
+    delayed_increase_percentage = models.DecimalField(
+        max_digits=5, decimal_places=2, default=8.0,
+        help_text="Annual increase percentage for delayed claiming (typically 8%/year)"
+    )
+    
+    # COLA (Cost of Living Adjustment)
+    assume_cola = models.BooleanField(
+        default=True,
+        help_text="Apply annual cost of living adjustments"
+    )
+    estimated_cola_percentage = models.DecimalField(
+        max_digits=4, decimal_places=2, default=2.5,
+        help_text="Estimated annual COLA percentage (e.g., 2.5 for 2.5%)"
+    )
+    
+    # Notes
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional notes about Social Security benefits"
+    )
+    
+    def __str__(self):
+        return f"Social Security - {self.beneficiary_name}"
+    
+    def calculate_adjusted_benefit(self, start_age=None):
+        """Calculate benefit adjusted for early/delayed claiming"""
+        from decimal import Decimal
+        
+        if start_age is None:
+            start_age = self.planned_start_age
+        
+        start_age = Decimal(str(start_age))
+        fra = Decimal(str(self.full_retirement_age))
+        base_benefit = self.estimated_monthly_benefit
+        
+        if start_age < fra:
+            # Early claiming - reduce benefits
+            years_early = float(fra - start_age)
+            reduction_rate = float(self.early_reduction_percentage) / 100
+            total_reduction = years_early * reduction_rate
+            return base_benefit * Decimal(str(1 - total_reduction))
+        elif start_age > fra:
+            # Delayed claiming - increase benefits
+            years_delayed = float(start_age - fra)
+            increase_rate = float(self.delayed_increase_percentage) / 100
+            total_increase = years_delayed * increase_rate
+            return base_benefit * Decimal(str(1 + total_increase))
+        else:
+            # Claiming at FRA
+            return base_benefit
+    
+    def calculate_annual_benefit(self, start_age=None):
+        """Calculate annual benefit amount"""
+        monthly = self.calculate_adjusted_benefit(start_age)
+        return monthly * 12
+    
+    def years_until_benefit_starts(self, retirement_date):
+        """Calculate years until benefits start based on retirement date"""
+        from datetime import date
+        from decimal import Decimal
+        
+        if not self.birth_date or not retirement_date:
+            return None
+        
+        # Calculate age at retirement date
+        age_at_retirement = (retirement_date - self.birth_date).days / 365.25
+        planned_start = float(self.planned_start_age)
+        
+        if age_at_retirement >= planned_start:
+            # Already eligible
+            return Decimal('0')
+        else:
+            # Years until eligible
+            return Decimal(str(planned_start - age_at_retirement))
+    
+    class Meta:
+        verbose_name = "Social Security Benefit"
+        verbose_name_plural = "Social Security Benefits"
+        ordering = ['beneficiary_name']
+
+
+class IncomeStream(TimeStampMixin):
+    """
+    Represents any guaranteed income stream for retirement planning,
+    such as pensions, rental income, annuities, part-time work, etc.
+    """
+    INCOME_TYPE_CHOICES = [
+        ('PENSION', 'Pension'),
+        ('RENTAL', 'Rental Income'),
+        ('ANNUITY_PAYMENT', 'Annuity Payment'),
+        ('PART_TIME', 'Part-Time Work'),
+        ('OTHER', 'Other'),
+    ]
+
+    FREQUENCY_CHOICES = [
+        ('MONTHLY', 'Monthly'),
+        ('QUARTERLY', 'Quarterly'),
+        ('ANNUAL', 'Annual'),
+    ]
+
+    portfolio = models.ForeignKey(
+        Portfolio,
+        on_delete=models.CASCADE,
+        related_name='income_streams',
+        help_text="Portfolio this income stream belongs to"
+    )
+
+    name = models.CharField(
+        max_length=200,
+        help_text="Name or description of this income stream"
+    )
+
+    income_type = models.CharField(
+        max_length=20,
+        choices=INCOME_TYPE_CHOICES,
+        default='OTHER',
+        help_text="Type of income stream"
+    )
+
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Amount per payment period"
+    )
+
+    frequency = models.CharField(
+        max_length=20,
+        choices=FREQUENCY_CHOICES,
+        default='MONTHLY',
+        help_text="How often payments are received"
+    )
+
+    start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When this income stream starts (leave blank if already started)"
+    )
+
+    end_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="When this income stream ends (leave blank for indefinite)"
+    )
+
+    is_guaranteed = models.BooleanField(
+        default=True,
+        help_text="Whether this income is guaranteed (e.g., pension vs. potential rental income)"
+    )
+
+    assume_cola = models.BooleanField(
+        default=False,
+        help_text="Assume cost of living adjustments"
+    )
+
+    estimated_cola_percentage = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0.0,
+        help_text="Estimated annual COLA percentage (e.g., 2.5 for 2.5%)"
+    )
+
+    notes = models.TextField(
+        blank=True,
+        help_text="Additional notes about this income stream"
+    )
+
+    def calculate_annual_income(self):
+        """Calculate annual income from this stream"""
+        from decimal import Decimal
+
+        if self.frequency == 'MONTHLY':
+            return self.amount * 12
+        elif self.frequency == 'QUARTERLY':
+            return self.amount * 4
+        elif self.frequency == 'ANNUAL':
+            return self.amount
+
+        return Decimal('0')
+
+    def is_active_at_retirement(self, retirement_date):
+        """Check if this income stream will be active at retirement"""
+        if not retirement_date:
+            return False
+
+        # If has start date and it's after retirement, not active
+        if self.start_date and self.start_date > retirement_date:
+            return False
+
+        # If has end date and it's before retirement, not active
+        if self.end_date and self.end_date < retirement_date:
+            return False
+
+        return True
+
+    def __str__(self):
+        return f"{self.name} - {self.get_income_type_display()}"
+
+    class Meta:
+        verbose_name = "Income Stream"
+        verbose_name_plural = "Income Streams"
+        ordering = ['name']

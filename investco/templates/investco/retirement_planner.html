@@ -75,7 +75,7 @@
         <div class="card dashboard-card">
             <div class="card-body">
                 <h6 class="text-muted">Est. Annual Income</h6>
-                <h3>${{ total_annual_income|floatformat:2|intcomma }}</h3>
+                <h3>${{ combined_annual_income|floatformat:2|intcomma }}</h3>
                 <small class="text-muted">per year</small>
             </div>
         </div>
@@ -102,8 +102,189 @@
                     </div>
                     <div class="col-md-4">
                         <small class="text-muted">Monthly Income</small>
-                        <h4>${{ total_monthly_income|floatformat:2|intcomma }}</h4>
+                        <h4>${{ combined_monthly_income|floatformat:2|intcomma }}</h4>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Income Breakdown -->
+{% if ss_benefit_projections or investment_projections or income_stream_projections %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="fas fa-money-check-alt"></i> Retirement Income Breakdown</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6 class="text-muted">Investment Income</h6>
+                        <h4>${{ total_annual_income|floatformat:2|intcomma }} <small class="text-muted">/ year</small></h4>
+                        <p class="text-muted mb-0">${{ total_monthly_income|floatformat:2|intcomma }} / month</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="text-muted">Social Security Benefits</h6>
+                        <h4>${{ total_ss_annual_income|floatformat:2|intcomma }} <small class="text-muted">/ year</small></h4>
+                        <p class="text-muted mb-0">${{ total_ss_monthly_income|floatformat:2|intcomma }} / month</p>
+                        {% if not ss_benefit_projections %}
+                        <a href="/admin/investco/socialsecuritybenefit/add/?portfolio={{ portfolio.id }}" class="btn btn-sm btn-outline-primary mt-2">
+                            <i class="fas fa-plus"></i> Add Social Security
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="text-muted">Other Income Streams</h6>
+                        <h4>${{ total_income_stream_annual|floatformat:2|intcomma }} <small class="text-muted">/ year</small></h4>
+                        <p class="text-muted mb-0">${{ total_income_stream_monthly|floatformat:2|intcomma }} / month</p>
+                        {% if not income_stream_projections %}
+                        <a href="/admin/investco/incomestream/add/?portfolio={{ portfolio.id }}" class="btn btn-sm btn-outline-primary mt-2">
+                            <i class="fas fa-plus"></i> Add Income Stream
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <hr class="my-3">
+                <div class="row">
+                    <div class="col-12">
+                        <h6 class="text-muted">Total Retirement Income</h6>
+                        <h3 class="gain-positive">${{ combined_annual_income|floatformat:2|intcomma }} <small class="text-muted">/ year</small></h3>
+                        <p class="text-muted">${{ combined_monthly_income|floatformat:2|intcomma }} / month</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Social Security Benefits Detail -->
+{% if ss_benefit_projections %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-shield-alt"></i> Social Security Benefits</h5>
+                    <a href="/admin/investco/socialsecuritybenefit/add/?portfolio={{ portfolio.id }}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-plus"></i> Add Benefit
+                    </a>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Beneficiary</th>
+                                <th class="text-center">Planned Start Age</th>
+                                <th class="text-center">Full Retirement Age</th>
+                                <th class="text-end">Monthly Benefit</th>
+                                <th class="text-end">Annual Benefit</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ss_proj in ss_benefit_projections %}
+                            <tr>
+                                <td>
+                                    <strong>{{ ss_proj.benefit.beneficiary_name }}</strong>
+                                    {% if ss_proj.benefit.birth_date %}
+                                    <br><small class="text-muted">Born {{ ss_proj.benefit.birth_date|date:"M d, Y" }}</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">{{ ss_proj.benefit.planned_start_age }}</td>
+                                <td class="text-center">{{ ss_proj.benefit.full_retirement_age }}</td>
+                                <td class="text-end">${{ ss_proj.monthly_income|floatformat:2|intcomma }}</td>
+                                <td class="text-end">${{ ss_proj.annual_income|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <a href="/admin/investco/socialsecuritybenefit/{{ ss_proj.benefit.id }}/change/"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-edit"></i> Edit
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Other Income Streams Detail -->
+{% if income_stream_projections %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card dashboard-card">
+            <div class="card-header bg-white">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-coins"></i> Other Income Streams</h5>
+                    <a href="/admin/investco/incomestream/add/?portfolio={{ portfolio.id }}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-plus"></i> Add Income Stream
+                    </a>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th class="text-center">Start Date</th>
+                                <th class="text-center">End Date</th>
+                                <th class="text-end">Monthly Income</th>
+                                <th class="text-end">Annual Income</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for stream_proj in income_stream_projections %}
+                            <tr {% if not stream_proj.is_active %}class="table-secondary"{% endif %}>
+                                <td>
+                                    <strong>{{ stream_proj.stream.name }}</strong>
+                                    {% if not stream_proj.is_active %}
+                                    <br><span class="badge bg-warning">Not Active at Retirement</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {{ stream_proj.stream.get_income_type_display }}
+                                    {% if stream_proj.stream.is_guaranteed %}
+                                    <br><small class="text-success"><i class="fas fa-check-circle"></i> Guaranteed</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if stream_proj.stream.start_date %}
+                                        {{ stream_proj.stream.start_date|date:"M d, Y" }}
+                                    {% else %}
+                                        <small class="text-muted">Already Started</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if stream_proj.stream.end_date %}
+                                        {{ stream_proj.stream.end_date|date:"M d, Y" }}
+                                    {% else %}
+                                        <small class="text-muted">Indefinite</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">${{ stream_proj.monthly_income|floatformat:2|intcomma }}</td>
+                                <td class="text-end">${{ stream_proj.annual_income|floatformat:2|intcomma }}</td>
+                                <td class="text-end">
+                                    <a href="/admin/investco/incomestream/{{ stream_proj.stream.id }}/change/"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-edit"></i> Edit
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>

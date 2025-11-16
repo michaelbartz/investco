@@ -725,44 +725,44 @@ def retirement_planner(request, portfolio_id):
     """Portfolio-level retirement planner with projections for all investments"""
     from datetime import date
     from decimal import Decimal
-    from .models import RetirementPlan
-    
+    from .models import RetirementPlan, SocialSecurityBenefit, IncomeStream
+
     portfolio = get_object_or_404(Portfolio, id=portfolio_id, user=request.user)
     investments = portfolio.investments.all()
-    
+
     # Calculate years until retirement
     years_to_retirement = None
     if portfolio.retirement_date:
         today = date.today()
         delta = portfolio.retirement_date - today
         years_to_retirement = delta.days / 365.25
-    
+
     # Calculate projections for each investment
     investment_projections = []
     total_current_value = Decimal('0')
     total_projected_value = Decimal('0')
     total_annual_income = Decimal('0')
-    
+
     for investment in investments:
         current_value = investment.current_value
         total_current_value += current_value
-        
+
         # Get or create retirement plan with defaults
         try:
             plan = investment.retirement_plan
         except RetirementPlan.DoesNotExist:
             plan = None
-        
+
         if plan and years_to_retirement and years_to_retirement > 0:
             projected_value = plan.calculate_future_value(years_to_retirement)
             annual_income = plan.calculate_annual_income(projected_value)
         else:
             projected_value = current_value
             annual_income = Decimal('0')
-        
+
         total_projected_value += projected_value
         total_annual_income += annual_income
-        
+
         investment_projections.append({
             'investment': investment,
             'current_value': current_value,
@@ -771,7 +771,54 @@ def retirement_planner(request, portfolio_id):
             'annual_income': annual_income,
             'has_plan': plan is not None,
         })
-    
+
+    # Calculate Social Security benefits
+    ss_benefits = portfolio.social_security_benefits.all()
+    ss_benefit_projections = []
+    total_ss_annual_income = Decimal('0')
+
+    for ss_benefit in ss_benefits:
+        annual_benefit = ss_benefit.calculate_annual_benefit()
+        total_ss_annual_income += annual_benefit
+
+        ss_benefit_projections.append({
+            'benefit': ss_benefit,
+            'annual_income': annual_benefit,
+            'monthly_income': annual_benefit / 12,
+        })
+
+    # Calculate other income streams
+    income_streams = portfolio.income_streams.all()
+    income_stream_projections = []
+    total_income_stream_annual = Decimal('0')
+
+    for income_stream in income_streams:
+        # Check if this income stream is active at retirement
+        is_active = True
+        if portfolio.retirement_date:
+            is_active = income_stream.is_active_at_retirement(portfolio.retirement_date)
+
+        if is_active:
+            annual_income = income_stream.calculate_annual_income()
+            total_income_stream_annual += annual_income
+
+            income_stream_projections.append({
+                'stream': income_stream,
+                'annual_income': annual_income,
+                'monthly_income': annual_income / 12,
+                'is_active': True,
+            })
+        else:
+            income_stream_projections.append({
+                'stream': income_stream,
+                'annual_income': Decimal('0'),
+                'monthly_income': Decimal('0'),
+                'is_active': False,
+            })
+
+    # Combined totals
+    combined_annual_income = total_annual_income + total_ss_annual_income + total_income_stream_annual
+
     context = {
         'portfolio': portfolio,
         'years_to_retirement': years_to_retirement,
@@ -781,6 +828,14 @@ def retirement_planner(request, portfolio_id):
         'total_projected_gain': total_projected_value - total_current_value,
         'total_annual_income': total_annual_income,
         'total_monthly_income': total_annual_income / 12,
+        'ss_benefit_projections': ss_benefit_projections,
+        'total_ss_annual_income': total_ss_annual_income,
+        'total_ss_monthly_income': total_ss_annual_income / 12,
+        'income_stream_projections': income_stream_projections,
+        'total_income_stream_annual': total_income_stream_annual,
+        'total_income_stream_monthly': total_income_stream_annual / 12,
+        'combined_annual_income': combined_annual_income,
+        'combined_monthly_income': combined_annual_income / 12,
     }
 
     return render(request, 'investco/retirement_planner.html', context)

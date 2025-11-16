@@ -8,7 +8,7 @@ from .models import (
     Stock, Bond, ETF, MutualFund, Retirement401k, Annuity, BrokerageAccount, RealEstate,
     Cryptocurrency, OtherInvestment, GuaranteedWithdrawalBalance,
     Statement, AnnuityStatement, Retirement401kStatement, BrokerageAccountStatement,
-    RetirementPlan
+    RetirementPlan, SocialSecurityBenefit, IncomeStream
 )
 
 
@@ -38,6 +38,7 @@ class InvestmentAdmin(PolymorphicParentModelAdmin):
     base_model = Investment
     child_models = (Stock, Bond, ETF, MutualFund, Retirement401k, Annuity, BrokerageAccount, RealEstate, Cryptocurrency, OtherInvestment)
     list_display = ['symbol', 'name', 'get_investment_type', 'portfolio', 'current_value']
+    list_display_links = ['symbol', 'name']
     list_filter = ['portfolio', 'created_at', 'polymorphic_ctype']
     search_fields = ['symbol', 'name']
 
@@ -1043,3 +1044,92 @@ class RetirementPlanAdmin(admin.ModelAdmin):
         }),
     )
 
+
+
+@admin.register(SocialSecurityBenefit)
+class SocialSecurityBenefitAdmin(admin.ModelAdmin):
+    list_display = ['beneficiary_name', 'portfolio', 'estimated_monthly_benefit', 'planned_start_age', 'full_retirement_age']
+    list_filter = ['portfolio', 'assume_cola']
+    search_fields = ['beneficiary_name', 'portfolio__name']
+    
+    fieldsets = (
+        ('Portfolio & Beneficiary', {
+            'fields': ('portfolio', 'beneficiary_name')
+        }),
+        ('Benefit Information', {
+            'fields': ('estimated_monthly_benefit', 'birth_date')
+        }),
+        ('Retirement Ages', {
+            'fields': ('full_retirement_age', 'planned_start_age'),
+            'description': 'Full retirement age is typically 66-67 depending on birth year. You can claim as early as 62 or delay until 70.'
+        }),
+        ('Benefit Adjustments', {
+            'fields': ('early_reduction_percentage', 'delayed_increase_percentage'),
+            'description': 'Early claiming reduces benefits (~6.67%/year before FRA). Delayed claiming increases benefits (8%/year after FRA).',
+            'classes': ('collapse',)
+        }),
+        ('Cost of Living Adjustments', {
+            'fields': ('assume_cola', 'estimated_cola_percentage'),
+            'description': 'COLA adjustments help benefits keep pace with inflation.',
+            'classes': ('collapse',)
+        }),
+        ('Notes', {
+            'fields': ('notes',),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    readonly_fields = []
+    
+    def get_readonly_fields(self, request, obj=None):
+        """Show calculated benefit in the admin"""
+        if obj:
+            return ['calculated_benefit_display']
+        return []
+    
+    def calculated_benefit_display(self, obj):
+        """Display the calculated benefit amount"""
+        monthly = obj.calculate_adjusted_benefit()
+        annual = obj.calculate_annual_benefit()
+        return f"${monthly:,.2f}/month (${annual:,.2f}/year)"
+    calculated_benefit_display.short_description = 'Calculated Benefit'
+
+
+@admin.register(IncomeStream)
+class IncomeStreamAdmin(admin.ModelAdmin):
+    list_display = [
+        'name', 'portfolio', 'income_type', 'amount', 'frequency',
+        'start_date', 'end_date', 'is_guaranteed', 'annual_income_display'
+    ]
+    list_filter = ['portfolio', 'income_type', 'frequency', 'is_guaranteed', 'assume_cola']
+    search_fields = ['name', 'notes']
+
+    fieldsets = (
+        ('Portfolio & Basic Info', {
+            'fields': ('portfolio', 'name', 'income_type')
+        }),
+        ('Income Details', {
+            'fields': ('amount', 'frequency', 'is_guaranteed')
+        }),
+        ('Schedule', {
+            'fields': ('start_date', 'end_date'),
+            'description': 'Specify when this income stream starts and ends. Leave start_date blank if already active. Leave end_date blank if indefinite.'
+        }),
+        ('Cost of Living Adjustments', {
+            'fields': ('assume_cola', 'estimated_cola_percentage'),
+            'description': 'Configure whether this income adjusts for cost of living increases.'
+        }),
+        ('Notes', {
+            'fields': ('notes',),
+            'classes': ('collapse',)
+        }),
+    )
+
+    readonly_fields = ['annual_income_display']
+
+    def annual_income_display(self, obj):
+        """Display the calculated annual income"""
+        annual = obj.calculate_annual_income()
+        monthly = annual / 12
+        return f"${annual:,.2f}/year (${monthly:,.2f}/month)"
+    annual_income_display.short_description = 'Calculated Annual Income'

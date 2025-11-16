@@ -753,4 +753,325 @@ None currently blocking.
 
 ---
 
+## 4. Social Security Benefits and Income Streams
+
+### A. Social Security Benefits Model
+
+**Problem**: Need to track Social Security benefits separately from investments for comprehensive retirement income planning.
+
+**Solution**: Created dedicated `SocialSecurityBenefit` model.
+
+**File: `investco/models.py`** (lines 1693-1812)
+
+Created comprehensive Social Security tracking model with:
+
+**Beneficiary Information:**
+- `beneficiary_name` - Name of person receiving benefits
+- `birth_date` - Date of birth for age calculations
+- `estimated_monthly_benefit` - Monthly benefit at full retirement age
+
+**Retirement Ages:**
+- `full_retirement_age` - FRA based on birth year (default 67.0)
+- `planned_start_age` - When beneficiary plans to claim benefits
+
+**Benefit Adjustments:**
+- `early_reduction_percentage` - Reduction % per year if claiming before FRA (default 0%)
+- `delayed_increase_percentage` - Increase % per year if delaying after FRA (default 8%)
+
+**COLA Support:**
+- `assume_cola` - Whether to assume cost of living adjustments
+- `estimated_cola_percentage` - Estimated annual COLA % (default 2.5%)
+
+**Methods:**
+- `calculate_adjusted_benefit(start_age)` - Calculates monthly benefit adjusted for early/delayed claiming
+  - Reduces benefit if claiming before FRA
+  - Increases benefit if delaying after FRA
+  - Returns adjusted monthly amount
+
+- `calculate_annual_benefit(start_age)` - Returns annual benefit (monthly × 12)
+
+- `years_until_benefit_starts(retirement_date)` - Calculates when benefits begin
+  - If already old enough, returns 0
+  - If not yet eligible, returns years until eligible
+
+**Migration**: `0014_socialsecuritybenefit.py`
+
+### B. Generic Income Streams Model
+
+**Problem**: Need to track other guaranteed income sources (pensions, rental income, part-time work, etc.) for complete retirement planning.
+
+**Solution**: Created flexible `IncomeStream` model.
+
+**File: `investco/models.py`** (lines 1815-1934)
+
+Created versatile income stream tracking model with:
+
+**Income Types:**
+- PENSION - Employer pension payments
+- RENTAL - Rental property income
+- ANNUITY_PAYMENT - Fixed annuity payments
+- PART_TIME - Part-time work income
+- OTHER - Any other income source
+
+**Income Configuration:**
+- `name` - Description of income stream
+- `income_type` - Type from choices above
+- `amount` - Payment amount per period
+- `frequency` - MONTHLY, QUARTERLY, or ANNUAL
+- `is_guaranteed` - Whether income is guaranteed (pension) vs. potential (rental)
+
+**Schedule:**
+- `start_date` - When income begins (null = already started)
+- `end_date` - When income ends (null = indefinite)
+
+**COLA Support:**
+- `assume_cola` - Whether income adjusts for inflation
+- `estimated_cola_percentage` - Estimated annual COLA %
+
+**Methods:**
+- `calculate_annual_income()` - Converts payment amount to annual income based on frequency
+  - Monthly: amount × 12
+  - Quarterly: amount × 4
+  - Annual: amount
+
+- `is_active_at_retirement(retirement_date)` - Checks if income is active at retirement
+  - Returns False if starts after retirement
+  - Returns False if ends before retirement
+  - Otherwise returns True
+
+**Migration**: `0015_incomestream.py`
+
+### C. Admin Interfaces
+
+#### Social Security Benefits Admin
+**File: `investco/admin.py`** (lines 1048-1094)
+
+Features:
+- List display: beneficiary, portfolio, monthly benefit, ages
+- List filters: portfolio, COLA assumption
+- Organized fieldsets:
+  - Portfolio & Beneficiary
+  - Benefit Information
+  - Retirement Ages (with FRA explanation)
+  - Benefit Adjustments (early reduction, delayed increase)
+  - Cost of Living Adjustments
+  - Notes
+- Read-only calculated benefit display showing adjusted monthly and annual amounts
+- Helpful descriptions explaining Social Security rules
+
+#### Income Streams Admin
+**File: `investco/admin.py`** (lines 1097-1134)
+
+Features:
+- List display: name, type, amount, frequency, dates, guaranteed status, annual income
+- List filters: portfolio, income type, frequency, guaranteed status, COLA
+- Search by name and notes
+- Organized fieldsets:
+  - Portfolio & Basic Info
+  - Income Details
+  - Schedule (start/end dates)
+  - Cost of Living Adjustments
+  - Notes (collapsed)
+- Read-only annual income display with monthly equivalent
+- Helpful descriptions for date fields
+
+### D. Retirement Planner Integration
+
+#### Updated Retirement Planner View
+**File: `investco/views.py`** (lines 724-841)
+
+Enhanced to include all income sources:
+
+**Social Security Benefits:**
+- Queries `portfolio.social_security_benefits.all()`
+- Calculates annual benefit for each beneficiary
+- Aggregates into `total_ss_annual_income`
+- Creates projection list with monthly/annual breakdown
+
+**Other Income Streams:**
+- Queries `portfolio.income_streams.all()`
+- Checks if each stream is active at retirement using `is_active_at_retirement()`
+- Calculates annual income for active streams
+- Marks inactive streams (starts after or ends before retirement)
+- Aggregates into `total_income_stream_annual`
+- Creates projection list with active/inactive status
+
+**Combined Totals:**
+- `combined_annual_income` = investment income + SS benefits + other streams
+- `combined_monthly_income` = combined annual / 12
+
+**Context Variables Added:**
+- `ss_benefit_projections` - List of SS benefit details
+- `total_ss_annual_income`, `total_ss_monthly_income`
+- `income_stream_projections` - List of income stream details with active status
+- `total_income_stream_annual`, `total_income_stream_monthly`
+- `combined_annual_income`, `combined_monthly_income`
+
+#### Updated Retirement Planner Template
+**File: `investco/templates/investco/retirement_planner.html`**
+
+**Income Breakdown Section** (lines 114-162):
+- Changed from 2-column to 3-column layout:
+  - Investment Income
+  - Social Security Benefits (with add button if none)
+  - Other Income Streams (with add button if none)
+- Shows Total Retirement Income combining all three sources
+- Uses combined income in summary cards and projections
+
+**Social Security Benefits Detail** (lines 164-218):
+- Table showing all SS benefits with:
+  - Beneficiary name and birth date
+  - Planned start age and FRA
+  - Monthly and annual benefit amounts
+  - Edit button for each benefit
+- Add button to create new benefits
+- Only displays if benefits exist
+
+**Other Income Streams Detail** (lines 220-293):
+- Table showing all income streams with:
+  - Name and type
+  - Start and end dates
+  - Monthly and annual income
+  - Guaranteed status indicator
+  - "Not Active at Retirement" badge for inactive streams
+  - Grayed-out row styling for inactive streams
+  - Edit button for each stream
+- Add button to create new streams
+- Only displays if streams exist
+
+### E. Investment Admin List View Fix
+
+**Problem**: Only the 'symbol' field was hyperlinked in the investment admin list, but not all investments have symbols.
+
+**Solution**:
+**File: `investco/admin.py`** (line 41)
+- Added `list_display_links = ['symbol', 'name']`
+- Now both symbol and name are clickable links to the detail view
+- Ensures all investments are accessible even without symbols
+
+---
+
+## Files Modified
+
+### Models
+1. **`investco/models.py`**
+   - Added SocialSecurityBenefit model (lines 1693-1812)
+   - Added IncomeStream model (lines 1815-1934)
+
+### Admin
+2. **`investco/admin.py`**
+   - Added SocialSecurityBenefit to imports (line 11)
+   - Added IncomeStream to imports (line 11)
+   - Added list_display_links to InvestmentAdmin (line 41)
+   - Added SocialSecurityBenefitAdmin (lines 1048-1094)
+   - Added IncomeStreamAdmin (lines 1097-1134)
+
+### Views
+3. **`investco/views.py`**
+   - Updated retirement_planner view with SS and income stream calculations (lines 724-841)
+
+### Templates
+4. **`investco/templates/investco/retirement_planner.html`**
+   - Changed income breakdown to 3-column layout (lines 114-162)
+   - Added Social Security benefits detail table (lines 164-218)
+   - Added other income streams detail table (lines 220-293)
+   - Updated all summary cards to show combined income
+
+### Migrations
+5. **`investco/migrations/0014_socialsecuritybenefit.py`** (NEW)
+   - Created SocialSecurityBenefit model
+
+6. **`investco/migrations/0015_incomestream.py`** (NEW)
+   - Created IncomeStream model
+
+---
+
+## Testing Notes
+
+### Verified Functionality
+- ✅ Social Security benefits can be added via admin
+- ✅ Benefit calculations handle early/delayed claiming
+- ✅ Income streams support multiple types and frequencies
+- ✅ Active/inactive status determined correctly based on dates
+- ✅ Retirement planner shows all income sources
+- ✅ Combined income totals calculate correctly
+- ✅ Inactive income streams display with visual distinction
+- ✅ Both symbol and name hyperlinked in investment admin list
+- ✅ Add buttons appear when no SS benefits or income streams exist
+
+### Edge Cases Handled
+- Missing or null dates in income streams
+- Income streams that start after retirement
+- Income streams that end before retirement
+- Multiple beneficiaries for Social Security
+- Mix of guaranteed and non-guaranteed income
+- Investments without symbols (name still clickable)
+
+---
+
+## Current System Status
+
+### Completed Features
+1. ✅ **Annuity Statement Management**
+   - Full CRUD operations
+   - PDF import for Jackson, TIAA, Valic
+   - Statement chaining and reconciliation
+   - Performance tracking
+
+2. ✅ **401k Retirement Account Statement Management**
+   - Full CRUD operations
+   - PDF import for John Hancock
+   - Statement chaining and reconciliation
+   - Performance tracking
+
+3. ✅ **Brokerage Account Statement Management**
+   - Full CRUD operations
+   - PDF import for M Holdings Securities
+   - Statement chaining and reconciliation
+   - Performance tracking
+   - Display in investment list views
+   - Account allocation tracking (Money Market, Equities, Fixed Income)
+
+4. ✅ **Retirement Planner**
+   - Portfolio-level retirement date tracking
+   - Investment-level retirement plans
+   - Future value projections with compound interest
+   - Flexible contribution schedules (monthly/annual)
+   - Option to stop contributions before retirement
+   - Multiple withdrawal strategies (percentage/fixed)
+   - Automatic GWB handling for annuities
+   - Annual and monthly income projections
+   - Portfolio-wide aggregation
+   - **Social Security benefits tracking**
+   - **Other income streams (pensions, rental, etc.)**
+   - **Combined income view with all sources**
+
+### Known Issues
+None currently blocking.
+
+### Next Steps (Future Work)
+- Inflation adjustment in retirement calculations
+- Tax impact estimation
+- Monte Carlo simulation for retirement projections
+- Visual charts showing growth trajectory over time
+- Timeline view showing when different income streams activate
+- Rebalancing recommendations based on target allocations
+- Additional PDF parser implementations for other providers
+- Refinement of performance pages for different investment types
+
+---
+
+## Key Accomplishments
+
+1. ✅ **Comprehensive Retirement Planning** - Full-featured retirement planner at portfolio and investment levels
+2. ✅ **Future Value Projections** - Accurate compound interest calculations with flexible contribution schedules
+3. ✅ **Retirement Income Estimation** - Multiple withdrawal strategies with automatic GWB support
+4. ✅ **Social Security Integration** - Complete Social Security benefit tracking with early/delayed claiming
+5. ✅ **Income Stream Management** - Flexible tracking of pensions, rental income, and other guaranteed income
+6. ✅ **Comprehensive Income View** - Single dashboard showing all retirement income sources
+7. ✅ **UI Improvements** - Consistent card sizing, simplified investment tables, and better navigation
+8. ✅ **Bug Fixes** - Resolved all Decimal/float type errors and polymorphic type checking issues
+
+---
+
 *Last Updated: 2025-11-16*
