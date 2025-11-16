@@ -37,3 +37,6 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Financial statement PDFs (private data)
+statements/
